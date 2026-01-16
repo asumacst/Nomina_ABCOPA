@@ -6,12 +6,20 @@ Esta es la interfaz gráfica de usuario para el Sistema de Nómina ABCOPA. Permi
 
 ## Requisitos
 
-- Python 3.x
-- tkinter (incluido con Python en la mayoría de instalaciones)
-- pandas
-- openpyxl
-- matplotlib
-- numpy
+* Python 3.x
+* tkinter (incluido con Python en la mayoría de instalaciones)
+
+* pandas
+* openpyxl
+
+* matplotlib
+* numpy
+
+Para instalar las librerias necesarias ejercutar:
+
+```bash
+pip3 install -r requirements.txt
+```
 
 ## Cómo Ejecutar
 
@@ -33,20 +41,24 @@ python gui.py
 ### 2. Gestionar Empleados
 
 **Ver Lista de Empleados:**
+
 - Muestra todos los empleados registrados en una tabla
 - Permite ver toda la información de cada empleado
 
 **Agregar Empleado:**
+
 - Formulario completo para agregar nuevos empleados
 - Generación automática de ID si no se especifica
 - Validación de campos requeridos
 
 **Modificar Empleado:**
+
 - Buscar empleado por ID
 - Modificar cualquier campo del empleado
 - Mantener valores actuales presionando Enter
 
 **Eliminar Empleado:**
+
 - Eliminar empleados por ID
 - Confirmación antes de eliminar
 
@@ -60,9 +72,10 @@ python gui.py
 La aplicación requiere los siguientes archivos Excel:
 
 1. **employees_information.xlsx**: Archivo con la información de los empleados
-   - Columnas requeridas: ID, nombre, cargo, salario, n_de_cuenta, banco, tipo_de_cuenta, fijo
 
+   - Columnas requeridas: ID, nombre, cargo, salario, n_de_cuenta, banco, tipo_de_cuenta, fijo
 2. **hours_worked.xlsx**: Archivo con los registros de asistencia
+
    - Columnas requeridas: ID, nombre, fecha, hora
    - Debe tener exactamente 2 registros por día por empleado (entrada y salida)
 
