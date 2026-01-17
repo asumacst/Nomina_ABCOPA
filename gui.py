@@ -12,45 +12,104 @@ from main import (
     leer_empleados_normalizado
 )
 
+# Paleta de colores: Negro, Cyan, Gris oscuro, Celeste
+COLOR_BG_DARK = '#1e1e1e'  # Fondo oscuro
+COLOR_BG_FRAME = '#2d2d2d'  # Gris oscuro para frames
+COLOR_TEXT = '#ffffff'  # Texto blanco
+COLOR_CYAN = '#00bcd4'  # Cyan
+COLOR_CELESTE = '#87ceeb'  # Celeste
+COLOR_BLACK = '#000000'  # Negro
+COLOR_GRAY_DARK = '#3d3d3d'  # Gris oscuro adicional
+
 
 class NominaApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Sistema de Nómina ABCOPA")
         self.root.geometry("900x700")
-        self.root.configure(bg='#f0f0f0')
+        self.root.configure(bg=COLOR_BG_DARK)
         
         # Estilo
         style = ttk.Style()
         style.theme_use('clam')
+        style.configure('TScrollbar', background=COLOR_BG_FRAME, troughcolor=COLOR_BG_DARK)
         
-        # Frame principal
-        self.main_frame = tk.Frame(root, bg='#f0f0f0', padx=20, pady=20)
-        self.main_frame.pack(fill=tk.BOTH, expand=True)
+        # Canvas con scrollbar para permitir desplazamiento
+        canvas = tk.Canvas(root, bg=COLOR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
         
-        # Título
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        # Centrar el contenido horizontalmente en el canvas
+        def center_content(event=None):
+            canvas.update_idletasks()
+            canvas_width = canvas.winfo_width()
+            frame_width = scrollable_frame.winfo_reqwidth()
+            if canvas_width > 1 and frame_width > 0:
+                x = (canvas_width - frame_width) // 2
+                canvas.coords(canvas.find_all()[0] if canvas.find_all() else None, max(0, x), 0)
+        
+        canvas.bind("<Configure>", center_content)
+        scrollable_frame.bind("<Configure>", center_content)
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Habilitar scroll con rueda del mouse (Windows)
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Vincular scroll a la ventana cuando el mouse está sobre ella
+        def _bind_mousewheel(event):
+            self.root.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_mousewheel(event):
+            self.root.unbind_all("<MouseWheel>")
+        
+        self.root.bind("<Enter>", _bind_mousewheel)
+        self.root.bind("<Leave>", _unbind_mousewheel)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Frame principal centrado con ancho máximo
+        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
+        center_container.pack(expand=True, fill=tk.BOTH)
+        
+        self.main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=20, pady=15)
+        self.main_frame.pack(expand=True)
+        
+        # Título centrado
         title_label = tk.Label(
             self.main_frame,
             text="SISTEMA DE NÓMINA ABCOPA",
-            font=('Arial', 24, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50'
+            font=('Arial', 20, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
-        title_label.pack(pady=(0, 30))
+        title_label.pack(pady=(0, 15), anchor=tk.CENTER)
         
         # Botones principales
         self.create_main_buttons()
         
     def create_main_buttons(self):
         """Crea los botones principales del menú"""
-        button_frame = tk.Frame(self.main_frame, bg='#f0f0f0')
-        button_frame.pack(pady=20)
+        # Contenedor para centrar los botones
+        button_container = tk.Frame(self.main_frame, bg=COLOR_BG_DARK)
+        button_container.pack(expand=True, fill=tk.X, pady=10)
+        
+        button_frame = tk.Frame(button_container, bg=COLOR_BG_DARK)
+        button_frame.pack(anchor=tk.CENTER)
         
         buttons = [
-            ("Calcular Nómina Quincenal", self.open_calculate_payroll, '#3498db'),
-            ("Gestionar Empleados", self.open_manage_employees, '#2ecc71'),
-            ("Ver Información", self.show_info, '#f39c12'),
-            ("Salir", self.root.quit, '#e74c3c')
+            ("Calcular Nómina Quincenal", self.open_calculate_payroll, COLOR_CYAN),
+            ("Gestionar Empleados", self.open_manage_employees, COLOR_CELESTE),
+            ("Ver Información", self.show_info, COLOR_GRAY_DARK),
+            ("Salir", self.root.quit, COLOR_BLACK)
         ]
         
         for text, command, color in buttons:
@@ -58,18 +117,18 @@ class NominaApp:
                 button_frame,
                 text=text,
                 command=command,
-                font=('Arial', 14, 'bold'),
+                font=('Arial', 12, 'bold'),
                 bg=color,
-                fg='white',
+                fg=COLOR_TEXT,
                 activebackground=color,
-                activeforeground='white',
-                width=30,
-                height=2,
+                activeforeground=COLOR_TEXT,
+                width=28,
+                height=1,
                 relief=tk.RAISED,
-                borderwidth=3,
+                borderwidth=2,
                 cursor='hand2'
             )
-            btn.pack(pady=10)
+            btn.pack(pady=5)
     
     def open_calculate_payroll(self):
         """Abre la ventana para calcular nómina"""
@@ -110,58 +169,152 @@ class CalculatePayrollWindow:
         self.window = tk.Toplevel(parent)
         self.window.title("Calcular Nómina Quincenal")
         self.window.geometry("700x600")
-        self.window.configure(bg='#f0f0f0')
+        self.window.configure(bg=COLOR_BG_DARK)
         self.window.transient(parent)
         self.window.grab_set()
         
-        # Frame principal
-        main_frame = tk.Frame(self.window, bg='#f0f0f0', padx=30, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Canvas con scrollbar para permitir desplazamiento
+        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
         
-        # Título
+        # Centrar el contenido horizontalmente en el canvas
+        def center_content(event=None):
+            canvas.update_idletasks()
+            canvas_width = canvas.winfo_width()
+            frame_width = scrollable_frame.winfo_reqwidth()
+            if canvas_width > 1 and frame_width > 0:
+                x = (canvas_width - frame_width) // 2
+                if canvas.find_all():
+                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
+        
+        def configure_scroll(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            center_content()
+        
+        scrollable_frame.bind("<Configure>", configure_scroll)
+        canvas.bind("<Configure>", center_content)
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Habilitar scroll con rueda del mouse (Windows)
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Vincular scroll a la ventana cuando el mouse está sobre ella
+        def _bind_mousewheel(event):
+            self.window.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_mousewheel(event):
+            self.window.unbind_all("<MouseWheel>")
+        
+        self.window.bind("<Enter>", _bind_mousewheel)
+        self.window.bind("<Leave>", _unbind_mousewheel)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Frame contenedor para centrar el contenido
+        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
+        center_container.pack(expand=True, fill=tk.BOTH)
+        
+        # Frame principal dentro del canvas
+        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=20, pady=15)
+        main_frame.pack(expand=True)
+        
+        # Título centrado
         title = tk.Label(
             main_frame,
             text="CALCULAR NÓMINA QUINCENAL",
-            font=('Arial', 18, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50'
+            font=('Arial', 16, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
-        title.pack(pady=(0, 20))
+        title.pack(pady=(0, 10), anchor=tk.CENTER)
+        
+        # Botones principales al inicio para mejor accesibilidad (centrados)
+        button_container = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        button_container.pack(expand=True, fill=tk.X, pady=10)
+        
+        button_frame_top = tk.Frame(button_container, bg=COLOR_BG_DARK)
+        button_frame_top.pack(anchor=tk.CENTER)
+        
+        self.calculate_btn = tk.Button(
+            button_frame_top,
+            text="Calcular Nómina",
+            command=self.calculate_payroll,
+            bg=COLOR_CYAN,
+            fg=COLOR_TEXT,
+            font=('Arial', 11, 'bold'),
+            width=18,
+            height=1,
+            cursor='hand2'
+        )
+        self.calculate_btn.pack(side=tk.LEFT, padx=5)
+        
+        self.continue_btn = tk.Button(
+            button_frame_top,
+            text="Continuar",
+            command=self.continue_operation,
+            bg=COLOR_CELESTE,
+            fg=COLOR_TEXT,
+            font=('Arial', 11, 'bold'),
+            width=15,
+            height=1,
+            cursor='hand2',
+            state='disabled'
+        )
+        self.continue_btn.pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(
+            button_frame_top,
+            text="Cerrar",
+            command=self.window.destroy,
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
+            font=('Arial', 11),
+            width=15,
+            height=1,
+            cursor='hand2'
+        ).pack(side=tk.LEFT, padx=5)
         
         # Frame de archivos
         files_frame = tk.LabelFrame(
             main_frame,
             text="Archivos",
-            font=('Arial', 12, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50',
-            padx=15,
-            pady=15
+            font=('Arial', 11, 'bold'),
+            bg=COLOR_BG_FRAME,
+            fg=COLOR_CYAN,
+            padx=12,
+            pady=10
         )
-        files_frame.pack(fill=tk.X, pady=10)
+        files_frame.pack(fill=tk.X, pady=5)
         
         # Archivo de empleados
         tk.Label(
             files_frame,
             text="Archivo de Empleados:",
             font=('Arial', 10),
-            bg='#f0f0f0'
+            bg=COLOR_BG_FRAME,
+            fg=COLOR_TEXT
         ).pack(anchor=tk.W)
         
-        emp_frame = tk.Frame(files_frame, bg='#f0f0f0')
+        emp_frame = tk.Frame(files_frame, bg=COLOR_BG_FRAME)
         emp_frame.pack(fill=tk.X, pady=5)
         
         self.emp_file_var = tk.StringVar(value="employees_information.xlsx")
-        emp_entry = tk.Entry(emp_frame, textvariable=self.emp_file_var, font=('Arial', 10))
+        emp_entry = tk.Entry(emp_frame, textvariable=self.emp_file_var, font=('Arial', 10), bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
         emp_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         tk.Button(
             emp_frame,
             text="Buscar",
             command=lambda: self.browse_file(self.emp_file_var),
-            bg='#95a5a6',
-            fg='white',
-            font=('Arial', 9)
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
+            font=('Arial', 9),
+            cursor='hand2'
         ).pack(side=tk.LEFT, padx=(5, 0))
         
         # Archivo de horas
@@ -169,64 +322,69 @@ class CalculatePayrollWindow:
             files_frame,
             text="Archivo de Horas Trabajadas:",
             font=('Arial', 10),
-            bg='#f0f0f0'
+            bg=COLOR_BG_FRAME,
+            fg=COLOR_TEXT
         ).pack(anchor=tk.W, pady=(10, 0))
         
-        hours_frame = tk.Frame(files_frame, bg='#f0f0f0')
+        hours_frame = tk.Frame(files_frame, bg=COLOR_BG_FRAME)
         hours_frame.pack(fill=tk.X, pady=5)
         
         self.hours_file_var = tk.StringVar(value="hours_worked.xlsx")
-        hours_entry = tk.Entry(hours_frame, textvariable=self.hours_file_var, font=('Arial', 10))
+        hours_entry = tk.Entry(hours_frame, textvariable=self.hours_file_var, font=('Arial', 10), bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
         hours_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         tk.Button(
             hours_frame,
             text="Buscar",
             command=lambda: self.browse_file(self.hours_file_var),
-            bg='#95a5a6',
-            fg='white',
-            font=('Arial', 9)
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
+            font=('Arial', 9),
+            cursor='hand2'
         ).pack(side=tk.LEFT, padx=(5, 0))
         
         # Frame de fecha
         date_frame = tk.LabelFrame(
             main_frame,
             text="Fecha de Referencia (Opcional)",
-            font=('Arial', 12, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50',
-            padx=15,
-            pady=15
+            font=('Arial', 11, 'bold'),
+            bg=COLOR_BG_FRAME,
+            fg=COLOR_CYAN,
+            padx=12,
+            pady=10
         )
-        date_frame.pack(fill=tk.X, pady=10)
+        date_frame.pack(fill=tk.X, pady=5)
         
         tk.Label(
             date_frame,
             text="Deje vacío para usar la quincena más reciente",
             font=('Arial', 9, 'italic'),
-            bg='#f0f0f0',
-            fg='#7f8c8d'
+            bg=COLOR_BG_FRAME,
+            fg=COLOR_CELESTE
         ).pack(anchor=tk.W, pady=(0, 5))
         
         self.date_var = tk.StringVar()
         date_entry = tk.Entry(
             date_frame,
             textvariable=self.date_var,
-            font=('Arial', 10)
+            font=('Arial', 10),
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
+            insertbackground=COLOR_TEXT
         )
         date_entry.pack(fill=tk.X, pady=5)
         date_entry.insert(0, "DD/MM/YYYY (ejemplo: 15/01/2026)")
-        date_entry.config(fg='grey')
+        date_entry.config(fg=COLOR_CELESTE)
         
         def on_date_entry_focus_in(event):
             if date_entry.get() == "DD/MM/YYYY (ejemplo: 15/01/2026)":
                 date_entry.delete(0, tk.END)
-                date_entry.config(fg='black')
+                date_entry.config(fg=COLOR_TEXT)
         
         def on_date_entry_focus_out(event):
             if not date_entry.get():
                 date_entry.insert(0, "DD/MM/YYYY (ejemplo: 15/01/2026)")
-                date_entry.config(fg='grey')
+                date_entry.config(fg=COLOR_CELESTE)
         
         date_entry.bind('<FocusIn>', on_date_entry_focus_in)
         date_entry.bind('<FocusOut>', on_date_entry_focus_out)
@@ -235,79 +393,37 @@ class CalculatePayrollWindow:
         msg_frame = tk.LabelFrame(
             main_frame,
             text="Mensajes",
-            font=('Arial', 12, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50',
-            padx=15,
-            pady=15
+            font=('Arial', 11, 'bold'),
+            bg=COLOR_BG_FRAME,
+            fg=COLOR_CYAN,
+            padx=12,
+            pady=10
         )
-        msg_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        msg_frame.pack(fill=tk.BOTH, expand=True, pady=5)
         
         self.message_text = scrolledtext.ScrolledText(
             msg_frame,
-            height=10,
+            height=8,
             font=('Consolas', 9),
-            bg='#ffffff',
-            fg='#2c3e50',
-            wrap=tk.WORD
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
+            wrap=tk.WORD,
+            insertbackground=COLOR_TEXT
         )
         self.message_text.pack(fill=tk.BOTH, expand=True)
         
-        # Indicador de estado
-        status_frame = tk.Frame(main_frame, bg='#f0f0f0')
-        status_frame.pack(pady=10)
+        # Indicador de estado (centrado)
+        status_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        status_frame.pack(pady=5)
         
         self.status_label = tk.Label(
             status_frame,
             text="",
-            font=('Arial', 11, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50'
+            font=('Arial', 10, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
         self.status_label.pack()
-        
-        # Botones
-        button_frame = tk.Frame(main_frame, bg='#f0f0f0')
-        button_frame.pack(pady=20)
-        
-        self.calculate_btn = tk.Button(
-            button_frame,
-            text="Calcular Nómina",
-            command=self.calculate_payroll,
-            bg='#3498db',
-            fg='white',
-            font=('Arial', 12, 'bold'),
-            width=20,
-            height=2,
-            cursor='hand2'
-        )
-        self.calculate_btn.pack(side=tk.LEFT, padx=10)
-        
-        self.continue_btn = tk.Button(
-            button_frame,
-            text="Continuar",
-            command=self.continue_operation,
-            bg='#2ecc71',
-            fg='white',
-            font=('Arial', 12, 'bold'),
-            width=15,
-            height=2,
-            cursor='hand2',
-            state='disabled'
-        )
-        self.continue_btn.pack(side=tk.LEFT, padx=10)
-        
-        tk.Button(
-            button_frame,
-            text="Cerrar",
-            command=self.window.destroy,
-            bg='#95a5a6',
-            fg='white',
-            font=('Arial', 12),
-            width=15,
-            height=2,
-            cursor='hand2'
-        ).pack(side=tk.LEFT, padx=10)
     
     def browse_file(self, var):
         """Abre diálogo para buscar archivo"""
@@ -322,7 +438,7 @@ class CalculatePayrollWindow:
         """Permite continuar después de calcular la nómina"""
         self.calculate_btn.config(state='normal')
         self.continue_btn.config(state='disabled')
-        self.status_label.config(text="", fg='#2c3e50')
+        self.status_label.config(text="", fg=COLOR_CYAN)
     
     def calculate_payroll(self):
         """Calcula la nómina"""
@@ -367,7 +483,7 @@ class CalculatePayrollWindow:
         self.message_text.delete(1.0, tk.END)
         self.calculate_btn.config(state='disabled')
         self.continue_btn.config(state='disabled')
-        self.status_label.config(text="⏳ Calculando nómina... Por favor espere.", fg='#e67e22')
+        self.status_label.config(text="⏳ Calculando nómina... Por favor espere.", fg=COLOR_CELESTE)
         self.window.update()
         
         # Mostrar mensaje de inicio
@@ -420,12 +536,12 @@ class CalculatePayrollWindow:
             self.message_text.insert(tk.END, "\n" + "=" * 60 + "\n")
             self.message_text.insert(tk.END, "✓ NÓMINA CALCULADA EXITOSAMENTE\n")
             self.message_text.insert(tk.END, "=" * 60 + "\n")
-            self.status_label.config(text="✓ Nómina calculada exitosamente. Presione 'Continuar' para realizar otra operación.", fg='#27ae60')
+            self.status_label.config(text="✓ Nómina calculada exitosamente. Presione 'Continuar' para realizar otra operación.", fg=COLOR_CYAN)
             self.calculate_btn.config(state='normal')
             self.continue_btn.config(state='normal')  # Habilitar botón Continuar
             messagebox.showinfo("Éxito", "La nómina ha sido calculada exitosamente.\n\nRevise el área de mensajes para ver los detalles.\n\nPresione 'Continuar' para realizar otra operación.")
         else:
-            self.status_label.config(text="✗ Error al calcular la nómina. Revise los mensajes.", fg='#e74c3c')
+            self.status_label.config(text="✗ Error al calcular la nómina. Revise los mensajes.", fg=COLOR_CELESTE)
             self.calculate_btn.config(state='normal')
             self.continue_btn.config(state='normal')  # Habilitar botón Continuar
             messagebox.showerror("Error", "No se pudo calcular la nómina.\n\nRevise el área de mensajes para ver los errores.\n\nPresione 'Continuar' para intentar nuevamente.")
@@ -433,7 +549,7 @@ class CalculatePayrollWindow:
     def show_error(self, error_msg):
         """Muestra un error en la interfaz"""
         self.message_text.insert(tk.END, f"\nERROR: {error_msg}\n")
-        self.status_label.config(text=f"✗ Error: {error_msg[:50]}...", fg='#e74c3c')
+        self.status_label.config(text=f"✗ Error: {error_msg[:50]}...", fg=COLOR_CELESTE)
         self.calculate_btn.config(state='normal')
         self.continue_btn.config(state='normal')  # Habilitar botón Continuar
         messagebox.showerror("Error", f"Error al calcular la nómina:\n{error_msg}\n\nPresione 'Continuar' para intentar nuevamente.")
@@ -444,33 +560,79 @@ class ManageEmployeesWindow:
         self.window = tk.Toplevel(parent)
         self.window.title("Gestionar Empleados")
         self.window.geometry("800x700")
-        self.window.configure(bg='#f0f0f0')
+        self.window.configure(bg=COLOR_BG_DARK)
         self.window.transient(parent)
         self.window.grab_set()
         
-        # Frame principal
-        main_frame = tk.Frame(self.window, bg='#f0f0f0', padx=20, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Canvas con scrollbar para permitir desplazamiento
+        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
         
-        # Título
+        # Centrar el contenido horizontalmente en el canvas
+        def center_content(event=None):
+            canvas.update_idletasks()
+            canvas_width = canvas.winfo_width()
+            frame_width = scrollable_frame.winfo_reqwidth()
+            if canvas_width > 1 and frame_width > 0:
+                x = (canvas_width - frame_width) // 2
+                if canvas.find_all():
+                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
+        
+        def configure_scroll(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            center_content()
+        
+        scrollable_frame.bind("<Configure>", configure_scroll)
+        canvas.bind("<Configure>", center_content)
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Habilitar scroll con rueda del mouse (Windows)
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Vincular scroll a la ventana cuando el mouse está sobre ella
+        def _bind_mousewheel(event):
+            self.window.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_mousewheel(event):
+            self.window.unbind_all("<MouseWheel>")
+        
+        self.window.bind("<Enter>", _bind_mousewheel)
+        self.window.bind("<Leave>", _unbind_mousewheel)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Frame contenedor para centrar el contenido
+        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
+        center_container.pack(expand=True, fill=tk.BOTH)
+        
+        # Frame principal
+        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=20, pady=15)
+        main_frame.pack(expand=True)
+        
+        # Título centrado
         title = tk.Label(
             main_frame,
             text="GESTIONAR EMPLEADOS",
-            font=('Arial', 18, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50'
+            font=('Arial', 16, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
-        title.pack(pady=(0, 20))
+        title.pack(pady=(0, 10), anchor=tk.CENTER)
         
-        # Botones de acción
-        button_frame = tk.Frame(main_frame, bg='#f0f0f0')
-        button_frame.pack(pady=10)
+        # Botones de acción centrados
+        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        button_frame.pack(pady=5, anchor=tk.CENTER)
         
         buttons = [
-            ("Ver Lista de Empleados", self.view_employees, '#3498db'),
-            ("Agregar Empleado", self.add_employee, '#2ecc71'),
-            ("Modificar Empleado", self.modify_employee, '#f39c12'),
-            ("Eliminar Empleado", self.delete_employee, '#e74c3c')
+            ("Ver Lista de Empleados", self.view_employees, COLOR_CYAN),
+            ("Agregar Empleado", self.add_employee, COLOR_CELESTE),
+            ("Modificar Empleado", self.modify_employee, COLOR_GRAY_DARK),
+            ("Eliminar Empleado", self.delete_employee, COLOR_BLACK)
         ]
         
         for text, command, color in buttons:
@@ -478,29 +640,33 @@ class ManageEmployeesWindow:
                 button_frame,
                 text=text,
                 command=command,
-                font=('Arial', 11, 'bold'),
+                font=('Arial', 10, 'bold'),
                 bg=color,
-                fg='white',
-                width=25,
-                height=2,
+                fg=COLOR_TEXT,
+                width=23,
+                height=1,
                 cursor='hand2',
                 relief=tk.RAISED,
-                borderwidth=2
+                borderwidth=2,
+                activebackground=color,
+                activeforeground=COLOR_TEXT
             )
-            btn.pack(pady=5)
+            btn.pack(pady=3)
         
-        # Botón cerrar
+        # Botón cerrar centrado
         tk.Button(
             main_frame,
             text="Cerrar",
             command=self.window.destroy,
-            bg='#95a5a6',
-            fg='white',
-            font=('Arial', 11),
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
+            font=('Arial', 10),
             width=15,
             height=1,
-            cursor='hand2'
-        ).pack(pady=20)
+            cursor='hand2',
+            activebackground=COLOR_GRAY_DARK,
+            activeforeground=COLOR_TEXT
+        ).pack(pady=10, anchor=tk.CENTER)
     
     def view_employees(self):
         """Muestra la lista de empleados"""
@@ -514,12 +680,31 @@ class ManageEmployeesWindow:
             view_window = tk.Toplevel(self.window)
             view_window.title("Lista de Empleados")
             view_window.geometry("900x500")
+            view_window.configure(bg=COLOR_BG_DARK)
+            
+            # Título centrado
+            title = tk.Label(
+                view_window,
+                text="LISTA DE EMPLEADOS",
+                font=('Arial', 14, 'bold'),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_CYAN
+            )
+            title.pack(pady=10)
             
             # Frame con scrollbar
-            frame = tk.Frame(view_window)
+            frame = tk.Frame(view_window, bg=COLOR_BG_DARK)
             frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            # Treeview
+            # Treeview con estilo oscuro
+            style = ttk.Style()
+            style.theme_use('clam')
+            style.configure("Treeview", background=COLOR_GRAY_DARK, foreground=COLOR_TEXT, 
+                          fieldbackground=COLOR_GRAY_DARK, borderwidth=0)
+            style.configure("Treeview.Heading", background=COLOR_BG_FRAME, foreground=COLOR_CYAN,
+                          borderwidth=1, relief=tk.SOLID)
+            style.map("Treeview", background=[('selected', COLOR_CYAN)])
+            
             tree = ttk.Treeview(frame)
             tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
             
@@ -563,21 +748,68 @@ class AddEmployeeWindow:
         self.window = tk.Toplevel(parent)
         self.window.title("Agregar Empleado")
         self.window.geometry("500x550")
-        self.window.configure(bg='#f0f0f0')
+        self.window.configure(bg=COLOR_BG_DARK)
         self.window.transient(parent)
         self.window.grab_set()
         
-        main_frame = tk.Frame(self.window, bg='#f0f0f0', padx=30, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Canvas con scrollbar para permitir desplazamiento
+        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
         
+        # Centrar el contenido horizontalmente en el canvas
+        def center_content(event=None):
+            canvas.update_idletasks()
+            canvas_width = canvas.winfo_width()
+            frame_width = scrollable_frame.winfo_reqwidth()
+            if canvas_width > 1 and frame_width > 0:
+                x = (canvas_width - frame_width) // 2
+                if canvas.find_all():
+                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
+        
+        def configure_scroll(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            center_content()
+        
+        scrollable_frame.bind("<Configure>", configure_scroll)
+        canvas.bind("<Configure>", center_content)
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Habilitar scroll con rueda del mouse (Windows)
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Vincular scroll a la ventana cuando el mouse está sobre ella
+        def _bind_mousewheel(event):
+            self.window.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_mousewheel(event):
+            self.window.unbind_all("<MouseWheel>")
+        
+        self.window.bind("<Enter>", _bind_mousewheel)
+        self.window.bind("<Leave>", _unbind_mousewheel)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Frame contenedor para centrar el contenido
+        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
+        center_container.pack(expand=True, fill=tk.BOTH)
+        
+        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=25, pady=15)
+        main_frame.pack(expand=True)
+        
+        # Título centrado
         title = tk.Label(
             main_frame,
             text="AGREGAR NUEVO EMPLEADO",
-            font=('Arial', 16, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50'
+            font=('Arial', 14, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
-        title.pack(pady=(0, 20))
+        title.pack(pady=(0, 10), anchor=tk.CENTER)
         
         # Campos
         fields = [
@@ -597,40 +829,46 @@ class AddEmployeeWindow:
             tk.Label(
                 main_frame,
                 text=label_text,
-                font=('Arial', 10),
-                bg='#f0f0f0'
-            ).pack(anchor=tk.W, pady=(10, 2))
+                font=('Arial', 9),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_TEXT
+            ).pack(anchor=tk.W, pady=(5, 2))
             
             var = tk.StringVar()
             self.vars[field_name] = var
             
-            entry = tk.Entry(main_frame, textvariable=var, font=('Arial', 10), width=40)
-            entry.pack(fill=tk.X, pady=(0, 5))
+            entry = tk.Entry(main_frame, textvariable=var, font=('Arial', 9), width=40, 
+                           bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
+            entry.pack(fill=tk.X, pady=(0, 3))
         
-        # Botones
-        button_frame = tk.Frame(main_frame, bg='#f0f0f0')
-        button_frame.pack(pady=20)
+        # Botones centrados
+        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        button_frame.pack(pady=10, anchor=tk.CENTER)
         
         tk.Button(
             button_frame,
             text="Agregar",
             command=self.add_employee,
-            bg='#2ecc71',
-            fg='white',
+            bg=COLOR_CYAN,
+            fg=COLOR_TEXT,
             font=('Arial', 11, 'bold'),
             width=15,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground=COLOR_CYAN,
+            activeforeground=COLOR_TEXT
         ).pack(side=tk.LEFT, padx=5)
         
         tk.Button(
             button_frame,
             text="Cancelar",
             command=self.window.destroy,
-            bg='#95a5a6',
-            fg='white',
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
             font=('Arial', 11),
             width=15,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground=COLOR_GRAY_DARK,
+            activeforeground=COLOR_TEXT
         ).pack(side=tk.LEFT, padx=5)
     
     def add_employee(self):
@@ -706,43 +944,94 @@ class ModifyEmployeeWindow:
         self.window = tk.Toplevel(parent)
         self.window.title("Modificar Empleado")
         self.window.geometry("500x600")
-        self.window.configure(bg='#f0f0f0')
+        self.window.configure(bg=COLOR_BG_DARK)
         self.window.transient(parent)
         self.window.grab_set()
         
-        main_frame = tk.Frame(self.window, bg='#f0f0f0', padx=30, pady=20)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        # Canvas con scrollbar para permitir desplazamiento
+        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
         
+        # Centrar el contenido horizontalmente en el canvas
+        def center_content(event=None):
+            canvas.update_idletasks()
+            canvas_width = canvas.winfo_width()
+            frame_width = scrollable_frame.winfo_reqwidth()
+            if canvas_width > 1 and frame_width > 0:
+                x = (canvas_width - frame_width) // 2
+                if canvas.find_all():
+                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
+        
+        def configure_scroll(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            center_content()
+        
+        scrollable_frame.bind("<Configure>", configure_scroll)
+        canvas.bind("<Configure>", center_content)
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Habilitar scroll con rueda del mouse (Windows)
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # Vincular scroll a la ventana cuando el mouse está sobre ella
+        def _bind_mousewheel(event):
+            self.window.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_mousewheel(event):
+            self.window.unbind_all("<MouseWheel>")
+        
+        self.window.bind("<Enter>", _bind_mousewheel)
+        self.window.bind("<Leave>", _unbind_mousewheel)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Frame contenedor para centrar el contenido
+        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
+        center_container.pack(expand=True, fill=tk.BOTH)
+        
+        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=25, pady=15)
+        main_frame.pack(expand=True)
+        
+        # Título centrado
         title = tk.Label(
             main_frame,
             text="MODIFICAR EMPLEADO",
-            font=('Arial', 16, 'bold'),
-            bg='#f0f0f0',
-            fg='#2c3e50'
+            font=('Arial', 14, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
-        title.pack(pady=(0, 20))
+        title.pack(pady=(0, 10), anchor=tk.CENTER)
         
         # ID del empleado
         tk.Label(
             main_frame,
             text="ID del Empleado:",
-            font=('Arial', 10, 'bold'),
-            bg='#f0f0f0'
-        ).pack(anchor=tk.W, pady=(10, 2))
+            font=('Arial', 9, 'bold'),
+            bg=COLOR_BG_DARK,
+            fg=COLOR_TEXT
+        ).pack(anchor=tk.W, pady=(5, 2))
         
         self.id_var = tk.StringVar()
-        id_entry = tk.Entry(main_frame, textvariable=self.id_var, font=('Arial', 10), width=40)
-        id_entry.pack(fill=tk.X, pady=(0, 10))
+        id_entry = tk.Entry(main_frame, textvariable=self.id_var, font=('Arial', 9), width=40,
+                          bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
+        id_entry.pack(fill=tk.X, pady=(0, 5))
         
         tk.Button(
             main_frame,
             text="Buscar Empleado",
             command=self.load_employee,
-            bg='#3498db',
-            fg='white',
-            font=('Arial', 10),
-            cursor='hand2'
-        ).pack(pady=5)
+            bg=COLOR_CYAN,
+            fg=COLOR_TEXT,
+            font=('Arial', 9),
+            cursor='hand2',
+            activebackground=COLOR_CYAN,
+            activeforeground=COLOR_TEXT
+        ).pack(pady=3, anchor=tk.CENTER)
         
         # Campos (inicialmente deshabilitados)
         fields = [
@@ -762,31 +1051,37 @@ class ModifyEmployeeWindow:
             tk.Label(
                 main_frame,
                 text=label_text,
-                font=('Arial', 10),
-                bg='#f0f0f0'
-            ).pack(anchor=tk.W, pady=(10, 2))
+                font=('Arial', 9),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_TEXT
+            ).pack(anchor=tk.W, pady=(5, 2))
             
             var = tk.StringVar()
             self.vars[field_name] = var
             
-            entry = tk.Entry(main_frame, textvariable=var, font=('Arial', 10), width=40, state='disabled')
-            entry.pack(fill=tk.X, pady=(0, 5))
+            entry = tk.Entry(main_frame, textvariable=var, font=('Arial', 9), width=40, 
+                           state='disabled', bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, 
+                           insertbackground=COLOR_TEXT, disabledbackground=COLOR_BG_FRAME,
+                           disabledforeground=COLOR_CELESTE)
+            entry.pack(fill=tk.X, pady=(0, 3))
             self.entries.append(entry)
         
-        # Botones
-        button_frame = tk.Frame(main_frame, bg='#f0f0f0')
-        button_frame.pack(pady=20)
+        # Botones centrados
+        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        button_frame.pack(pady=10, anchor=tk.CENTER)
         
         self.modify_btn = tk.Button(
             button_frame,
             text="Modificar",
             command=self.modify_employee,
-            bg='#f39c12',
-            fg='white',
+            bg=COLOR_CELESTE,
+            fg=COLOR_TEXT,
             font=('Arial', 11, 'bold'),
             width=15,
             cursor='hand2',
-            state='disabled'
+            state='disabled',
+            activebackground=COLOR_CELESTE,
+            activeforeground=COLOR_TEXT
         )
         self.modify_btn.pack(side=tk.LEFT, padx=5)
         
@@ -794,11 +1089,13 @@ class ModifyEmployeeWindow:
             button_frame,
             text="Cancelar",
             command=self.window.destroy,
-            bg='#95a5a6',
-            fg='white',
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
             font=('Arial', 11),
             width=15,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground=COLOR_GRAY_DARK,
+            activeforeground=COLOR_TEXT
         ).pack(side=tk.LEFT, padx=5)
     
     def load_employee(self):
@@ -910,56 +1207,64 @@ class DeleteEmployeeWindow:
         self.window = tk.Toplevel(parent)
         self.window.title("Eliminar Empleado")
         self.window.geometry("400x200")
-        self.window.configure(bg='#f0f0f0')
+        self.window.configure(bg=COLOR_BG_DARK)
         self.window.transient(parent)
         self.window.grab_set()
         
-        main_frame = tk.Frame(self.window, bg='#f0f0f0', padx=30, pady=30)
+        main_frame = tk.Frame(self.window, bg=COLOR_BG_DARK, padx=30, pady=30)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
+        # Título centrado
         title = tk.Label(
             main_frame,
             text="ELIMINAR EMPLEADO",
             font=('Arial', 16, 'bold'),
-            bg='#f0f0f0',
-            fg='#e74c3c'
+            bg=COLOR_BG_DARK,
+            fg=COLOR_CYAN
         )
-        title.pack(pady=(0, 20))
+        title.pack(pady=(0, 20), anchor=tk.CENTER)
         
         tk.Label(
             main_frame,
             text="ID del Empleado:",
             font=('Arial', 10),
-            bg='#f0f0f0'
+            bg=COLOR_BG_DARK,
+            fg=COLOR_TEXT
         ).pack(anchor=tk.W, pady=(10, 2))
         
         self.id_var = tk.StringVar()
-        id_entry = tk.Entry(main_frame, textvariable=self.id_var, font=('Arial', 10), width=30)
+        id_entry = tk.Entry(main_frame, textvariable=self.id_var, font=('Arial', 10), width=30,
+                          bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
         id_entry.pack(fill=tk.X, pady=(0, 20))
         
-        button_frame = tk.Frame(main_frame, bg='#f0f0f0')
-        button_frame.pack()
+        # Botones centrados
+        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
+        button_frame.pack(anchor=tk.CENTER)
         
         tk.Button(
             button_frame,
             text="Eliminar",
             command=self.delete_employee,
-            bg='#e74c3c',
-            fg='white',
+            bg=COLOR_BLACK,
+            fg=COLOR_TEXT,
             font=('Arial', 11, 'bold'),
             width=15,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground=COLOR_BLACK,
+            activeforeground=COLOR_TEXT
         ).pack(side=tk.LEFT, padx=5)
         
         tk.Button(
             button_frame,
             text="Cancelar",
             command=self.window.destroy,
-            bg='#95a5a6',
-            fg='white',
+            bg=COLOR_GRAY_DARK,
+            fg=COLOR_TEXT,
             font=('Arial', 11),
             width=15,
-            cursor='hand2'
+            cursor='hand2',
+            activebackground=COLOR_GRAY_DARK,
+            activeforeground=COLOR_TEXT
         ).pack(side=tk.LEFT, padx=5)
     
     def delete_employee(self):
