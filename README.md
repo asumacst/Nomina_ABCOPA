@@ -4,6 +4,10 @@
 
 Esta es la interfaz gráfica de usuario para el Sistema de Nómina ABCOPA. Permite al encargado realizar el cálculo de nómina de manera sencilla e intuitiva.
 
+## Descarga de archivo ejecutable
+
+En caso de necesitar el archivo ejecutable, este se encuentra en la carpeta dist. Revisar archivo de INSTRUCCIONES_EJECUTABLE.md
+
 ## Requisitos
 
 * Python 3.x
