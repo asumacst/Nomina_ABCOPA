@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from matplotlib import pyplot as plt
 
 feriados_panama = {
     2026: {
@@ -38,6 +37,41 @@ feriados_panama = {
         "11-04": "Día de los Símbolos Patrios", "11-05": "Grito de Colón", "11-10": "Grito de Los Santos",
         "11-28": "Independencia de España", "12-08": "Día de las Madres", "12-20": "Día de los Caídos (Invasión)",
         "12-25": "Navidad"
+    },
+    2031: {
+        "01-01": "Año Nuevo", "01-09": "Día de los Mártires", "02-25": "Martes de Carnaval",
+        "04-11": "Viernes Santo", "05-01": "Día del Trabajo", "11-03": "Separación de Panamá de Colombia",
+        "11-04": "Día de los Símbolos Patrios", "11-05": "Grito de Colón", "11-10": "Grito de Los Santos",
+        "11-28": "Independencia de España", "12-08": "Día de las Madres", "12-20": "Día de los Caídos (Invasión)",
+        "12-25": "Navidad"
+    },
+    2032: {
+        "01-01": "Año Nuevo", "01-09": "Día de los Mártires", "02-10": "Martes de Carnaval",
+        "03-26": "Viernes Santo", "05-01": "Día del Trabajo", "11-03": "Separación de Panamá de Colombia",
+        "11-04": "Día de los Símbolos Patrios", "11-05": "Grito de Colón", "11-10": "Grito de Los Santos",
+        "11-28": "Independencia de España", "12-08": "Día de las Madres", "12-20": "Día de los Caídos (Invasión)",
+        "12-25": "Navidad"
+    },
+    2033: {
+        "01-01": "Año Nuevo", "01-09": "Día de los Mártires", "03-01": "Martes de Carnaval",
+        "04-15": "Viernes Santo", "05-01": "Día del Trabajo", "11-03": "Separación de Panamá de Colombia",
+        "11-04": "Día de los Símbolos Patrios", "11-05": "Grito de Colón", "11-10": "Grito de Los Santos",
+        "11-28": "Independencia de España", "12-08": "Día de las Madres", "12-20": "Día de los Caídos (Invasión)",
+        "12-25": "Navidad"
+    },
+    2034: {
+        "01-01": "Año Nuevo", "01-09": "Día de los Mártires", "02-21": "Martes de Carnaval",
+        "04-07": "Viernes Santo", "05-01": "Día del Trabajo", "11-03": "Separación de Panamá de Colombia",
+        "11-04": "Día de los Símbolos Patrios", "11-05": "Grito de Colón", "11-10": "Grito de Los Santos",
+        "11-28": "Independencia de España", "12-08": "Día de las Madres", "12-20": "Día de los Caídos (Invasión)",
+        "12-25": "Navidad"
+    },
+    2035: {
+        "01-01": "Año Nuevo", "01-09": "Día de los Mártires", "02-06": "Martes de Carnaval",
+        "03-23": "Viernes Santo", "05-01": "Día del Trabajo", "11-03": "Separación de Panamá de Colombia",
+        "11-04": "Día de los Símbolos Patrios", "11-05": "Grito de Colón", "11-10": "Grito de Los Santos",
+        "11-28": "Independencia de España", "12-08": "Día de las Madres", "12-20": "Día de los Caídos (Invasión)",
+        "12-25": "Navidad"
     }
 }
 
@@ -71,6 +105,111 @@ def es_feriado_o_domingo(fecha):
             return True
     
     return False
+
+def leer_reporte_asistencia(archivo="Reporte de Asistencia.xlsx"):
+    """
+    Lee el archivo de Reporte de Asistencia del escáner biométrico y lo convierte
+    al formato esperado por el sistema.
+    
+    Args:
+        archivo: Ruta al archivo Excel del reporte de asistencia
+        
+    Returns:
+        DataFrame con columnas: ID, nombre, fecha, hora
+    """
+    try:
+        # Leer el archivo sin encabezados primero para encontrar la fila de encabezados
+        df_raw = pd.read_excel(archivo, header=None)
+        
+        # Buscar la fila que contiene los encabezados (First Name, Last Name, ID, Date, Time)
+        header_row = None
+        for idx, row in df_raw.iterrows():
+            if pd.notna(row[0]) and str(row[0]).strip() == 'First Name':
+                header_row = idx
+                break
+        
+        if header_row is None:
+            raise ValueError("No se encontró la fila de encabezados en el archivo")
+        
+        # Leer el archivo con los encabezados correctos
+        df = pd.read_excel(archivo, header=header_row)
+        
+        # Limpiar nombres de columnas (eliminar espacios extra)
+        df.columns = df.columns.str.strip()
+        
+        # Verificar que las columnas necesarias existan
+        required_columns = ['First Name', 'Last Name', 'ID', 'Date', 'Time']
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            raise ValueError(f"Faltan columnas requeridas: {missing_columns}")
+        
+        # Crear el DataFrame en el formato esperado
+        result_df = pd.DataFrame()
+        
+        # Combinar First Name y Last Name para crear el nombre completo
+        result_df['nombre'] = (df['First Name'].astype(str).str.strip() + ' ' + 
+                              df['Last Name'].astype(str).str.strip()).str.strip()
+        
+        # ID - normalizar: convertir a string y eliminar espacios
+        # Si el ID es un número float (ej: 170660927.0), convertirlo a int primero
+        def normalizar_id(id_val):
+            if pd.isna(id_val):
+                return None
+            # Si es float y es entero, convertir a int
+            if isinstance(id_val, float) and id_val.is_integer():
+                return str(int(id_val))
+            # Convertir a string y limpiar
+            return str(id_val).strip()
+        
+        result_df['ID'] = df['ID'].apply(normalizar_id)
+        
+        # Fecha - convertir a datetime
+        result_df['fecha'] = pd.to_datetime(df['Date'], errors='coerce')
+        
+        # Hora - convertir a string en formato HH:MM
+        # Si es datetime.time, convertir a formato HH:MM
+        def convertir_hora(time_val):
+            if pd.isna(time_val):
+                return None
+            # Si es datetime.time, convertir a string HH:MM
+            if isinstance(time_val, pd.Timestamp):
+                return time_val.strftime('%H:%M')
+            elif hasattr(time_val, 'hour') and hasattr(time_val, 'minute'):
+                # Es un objeto time
+                return f"{time_val.hour:02d}:{time_val.minute:02d}"
+            else:
+                # Es string, intentar parsearlo
+                time_str = str(time_val).strip()
+                # Si tiene formato HH:MM:SS, tomar solo HH:MM
+                if ':' in time_str:
+                    parts = time_str.split(':')
+                    return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
+                return time_str
+        
+        result_df['hora'] = df['Time'].apply(convertir_hora)
+        
+        # Eliminar filas con datos inválidos (fechas, horas o IDs nulos)
+        result_df = result_df.dropna(subset=['fecha', 'hora', 'ID', 'nombre'])
+        
+        # Filtrar filas donde la hora no sea válida (debe tener formato HH:MM)
+        mask = result_df['hora'].str.match(r'^\d{1,2}:\d{2}$', na=False)
+        result_df = result_df[mask]
+        
+        # Filtrar filas donde el nombre no sea válido (no debe ser 'nan' o vacío)
+        mask = (result_df['nombre'] != 'nan') & (result_df['nombre'].str.len() > 0)
+        result_df = result_df[mask]
+        
+        # Resetear índice
+        result_df = result_df.reset_index(drop=True)
+        
+        print(f"[OK] Archivo de asistencia leído: {len(result_df)} registros procesados")
+        
+        return result_df
+        
+    except Exception as e:
+        print(f"[ERROR] Error al leer el archivo de asistencia: {e}")
+        raise
+
 
 def validate_attendance_records(hours_df):
     """
@@ -117,8 +256,13 @@ def calculate_hours_per_day(hours_df):
     daily_hours = []
     
     # Convertir fecha a datetime si es necesario
+    # El archivo de asistencia usa formato YYYY-MM-DD, pero también puede venir en otros formatos
     if not pd.api.types.is_datetime64_any_dtype(hours_df['fecha']):
-        hours_df['fecha'] = pd.to_datetime(hours_df['fecha'], format='%d/%m/%Y', errors='coerce')
+        # Intentar primero con formato del reporte de asistencia (YYYY-MM-DD)
+        hours_df['fecha'] = pd.to_datetime(hours_df['fecha'], errors='coerce')
+        # Si hay valores nulos, intentar con formato DD/MM/YYYY
+        if hours_df['fecha'].isna().any():
+            hours_df['fecha'] = pd.to_datetime(hours_df['fecha'], format='%d/%m/%Y', errors='coerce')
     
     # Función para convertir hora a objeto time (sin AM/PM)
     def parse_time_str(time_str):
@@ -209,23 +353,35 @@ def calculate_hours_per_day(hours_df):
             # Calcular horas trabajadas
             horas_trabajadas = (salida - entrada).total_seconds() / 3600
             
-            # Calcular horas extra (después de las 3 PM / 15:00, no incluyendo las 3:00 PM)
+            # Calcular horas extra
+            # - Días normales (lunes a viernes): después de las 3 PM / 15:00
+            # - Sábados: después de las 12 PM / 12:00 (mediodía)
+            # - Domingos y feriados: no aplica (se pagan con 50% adicional)
             horas_extra = 0.0
             
-            # Solo contar horas extra si la salida es DESPUÉS de las 3:00 PM (no igual)
+            # Verificar si es sábado (weekday() devuelve 5 para sábado)
+            es_sabado = date.weekday() == 5 if isinstance(date, pd.Timestamp) else date.weekday() == 5
+            
+            # Determinar la hora límite para horas extra
+            if es_sabado:
+                hora_limite_extra = 12  # Sábados: después de las 12 PM
+            else:
+                hora_limite_extra = 15  # Días normales: después de las 3 PM
+            
+            # Solo contar horas extra si la salida es DESPUÉS de la hora límite (no igual)
             # Usar salida_hour_final que ya tiene la hora correcta en formato 24h
-            if salida_hour_final > 15:
-                # Si la salida es después de las 3 PM, calcular horas extra
-                if entrada_hour_final < 15:
-                    # La entrada fue antes de las 3 PM, calcular solo las horas después de las 3 PM
-                    horas_extra = salida_hour_final - 15
+            if salida_hour_final > hora_limite_extra:
+                # Si la salida es después de la hora límite, calcular horas extra
+                if entrada_hour_final < hora_limite_extra:
+                    # La entrada fue antes de la hora límite, calcular solo las horas después de la hora límite
+                    horas_extra = salida_hour_final - hora_limite_extra
                     # Si hay minutos en la salida, agregar la fracción correspondiente
                     if salida_minute > 0:
                         horas_extra += salida_minute / 60.0
                 else:
-                    # La entrada fue después de las 3 PM, todas las horas son extra
+                    # La entrada fue después de la hora límite, todas las horas son extra
                     horas_extra = horas_trabajadas
-            # Si salida_hour_final == 15 (exactamente 3:00 PM), horas_extra = 0
+            # Si salida_hour_final == hora_limite_extra (exactamente a la hora límite), horas_extra = 0
             
             # Validar que las horas sean razonables (entre 1 y 16 horas por día)
             if horas_trabajadas < 1 or horas_trabajadas > 16:
@@ -278,7 +434,7 @@ def get_quincena_periods(daily_hours_df):
 
 
 def calculate_payroll_quincenal(employees_file="employees_information.xlsx", 
-                                 hours_file="hours_worked.xlsx",
+                                 hours_file="Reporte de Asistencia.xlsx",
                                  output_file=None,
                                  quincena_fecha=None):
     """
@@ -286,7 +442,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     
     Args:
         employees_file: Archivo Excel con información de empleados
-        hours_file: Archivo Excel con horas trabajadas
+        hours_file: Archivo Excel del reporte de asistencia del escáner biométrico
         output_file: Nombre del archivo Excel de salida (si es None, se genera automáticamente)
         quincena_fecha: Fecha de referencia para determinar qué quincena calcular (si es None, usa la más reciente)
         
@@ -306,10 +462,10 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         print(f"[ERROR] Error al leer {employees_file}: {e}")
         return None
     
-    # Leer archivo de horas trabajadas
-    print(f"\nLeyendo horas trabajadas desde: {hours_file}")
+    # Leer archivo de horas trabajadas desde el reporte de asistencia
+    print(f"\nLeyendo reporte de asistencia desde: {hours_file}")
     try:
-        hours_df = pd.read_excel(hours_file)
+        hours_df = leer_reporte_asistencia(hours_file)
         print(f"[OK] Encontrados {len(hours_df)} registros de asistencia")
     except Exception as e:
         print(f"[ERROR] Error al leer {hours_file}: {e}")
@@ -378,8 +534,10 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         # Usar ID como clave principal, pero también nombre como alternativa
         employees_dict[str(emp['ID'])] = {
             'nombre': emp['nombre'],
-            'fijo': bool(emp['fijo']),
-            'salario': float(emp['salario']),
+            'salario_fijo': bool(emp.get('salario_fijo', False)),
+            'empleado_fijo': bool(emp.get('empleado_fijo', False)),
+            'salario_minimo': float(emp.get('salario_minimo', 0)) if pd.notna(emp.get('salario_minimo')) else 0.0,
+            'salario': float(emp['salario']) if pd.notna(emp['salario']) else 0.0,
             'cargo': emp.get('cargo', ''),
             'n_de_cuenta': emp.get('n_de_cuenta', ''),
             'banco': emp.get('banco', ''),
@@ -403,13 +561,74 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         total_horas_extra = group['horas_extra'].sum()  # Horas trabajadas después de las 3 PM
         quincena_fin = group['quincena_fin'].iloc[0]
         
-        # Calcular pago según si es fijo o no
-        if emp_info['fijo']:
-            # Empleado fijo: recibe el mismo salario sin importar horas (no recibe pago extra)
+        # Inicializar variables de pago
+        pago_extra = 0.0
+        pago_feriado_domingo = 0.0
+        bono_horas_extra = 0.0
+        
+        # Calcular pago según el tipo de empleado
+        if emp_info['salario_fijo']:
+            # Empleado con salario fijo: recibe el mismo salario sin importar horas (no recibe pago extra)
             pago_quincenal = emp_info['salario'] / 2  # Salario mensual dividido en 2 quincenas
-            pago_extra = 0.0  # Los empleados fijos no reciben pago extra
-            pago_feriado_domingo = 0.0  # Los empleados fijos no reciben pago extra por feriados/domingos
-            tipo_pago = "Fijo"
+            pago_extra = 0.0  # Los empleados con salario fijo no reciben pago extra
+            pago_feriado_domingo = 0.0  # Los empleados con salario fijo no reciben pago extra por feriados/domingos
+            tipo_pago = "Salario Fijo"
+        elif emp_info['empleado_fijo']:
+            # Empleado fijo con sueldo mínimo: cobra salario mínimo garantizado + bono por horas extra
+            salario_minimo = emp_info['salario_minimo']
+            salario_por_hora = emp_info['salario']
+            
+            # Calcular horas requeridas para el salario mínimo (mensual)
+            # Para la quincena, necesitamos las horas requeridas quincenales
+            if salario_por_hora > 0:
+                horas_requeridas_mensual = salario_minimo / salario_por_hora
+                horas_requeridas_quincenal = horas_requeridas_mensual / 2  # Dividir entre 2 quincenas
+            else:
+                horas_requeridas_quincenal = 0
+            
+            # Separar horas normales, horas extra (después 3 PM) y horas en feriados/domingos
+            horas_normales = 0.0
+            horas_extra_normales = 0.0  # Horas extra en días normales
+            horas_feriado_domingo = 0.0  # Horas trabajadas en feriados/domingos (todas)
+            
+            for _, row in group.iterrows():
+                horas_dia = row['horas_trabajadas']
+                horas_extra_dia = row['horas_extra']
+                es_feriado_domingo = row['es_feriado_domingo']
+                
+                if es_feriado_domingo:
+                    # Si es feriado o domingo, todas las horas se pagan con 50% adicional
+                    horas_feriado_domingo += horas_dia
+                else:
+                    # Día normal
+                    horas_normales += (horas_dia - horas_extra_dia)
+                    horas_extra_normales += horas_extra_dia
+            
+            # Pago base: salario mínimo garantizado (quincenal)
+            pago_base = salario_minimo / 2  # Salario mínimo mensual dividido en 2 quincenas
+            
+            # Calcular horas trabajadas totales para determinar el bono
+            # IMPORTANTE: El bono NO debe incluir las horas extra después de 3 PM (o 12 PM en sábados)
+            # porque esas horas ya se pagan con 25% adicional por separado
+            # El bono se calcula solo sobre horas normales + horas en feriados/domingos
+            horas_para_bono = horas_normales + horas_feriado_domingo
+            
+            # Bono por horas extra: si trabajó más de las horas requeridas, se paga como bono adicional
+            # El bono se calcula solo sobre horas normales (sin horas extra después 3 PM) y se paga a precio normal
+            horas_extra_para_bono = max(0, horas_para_bono - horas_requeridas_quincenal)
+            bono_horas_extra = horas_extra_para_bono * salario_por_hora
+            
+            # Pago extra: 25% adicional sobre el salario por hora para horas después de las 3 PM en días normales
+            salario_hora_extra = salario_por_hora * 1.25
+            pago_extra = salario_hora_extra * horas_extra_normales
+            
+            # Pago feriado/domingo: 50% adicional sobre el salario por hora para TODAS las horas trabajadas en feriados/domingos
+            salario_hora_feriado_domingo = salario_por_hora * 1.50
+            pago_feriado_domingo = salario_hora_feriado_domingo * horas_feriado_domingo
+            
+            # Pago total: salario mínimo + bono por horas extra + pago extra (25%) + pago feriado/domingo (50%)
+            pago_quincenal = pago_base + bono_horas_extra + pago_extra + pago_feriado_domingo
+            tipo_pago = "Empleado Fijo"
         else:
             # Empleado no fijo: salario por horas trabajadas
             # Asumimos que el salario es por hora
@@ -454,7 +673,8 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Nombre': emp_info['nombre'],
             'Cargo': emp_info['cargo'],
             'Tipo': tipo_pago,
-            'Fijo': 'Sí' if emp_info['fijo'] else 'No',
+            'Salario Fijo': 'Sí' if emp_info['salario_fijo'] else 'No',
+            'Empleado Fijo': 'Sí' if emp_info['empleado_fijo'] else 'No',
             'Salario Base': emp_info['salario'],
             'Quincena Inicio': quincena_inicio.strftime('%d/%m/%Y'),
             'Quincena Fin': quincena_fin.strftime('%d/%m/%Y'),
@@ -467,14 +687,11 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Tipo de Cuenta': emp_info['tipo_de_cuenta']
         }
         
-        # Agregar información de feriados/domingos solo para empleados no fijos
-        if not emp_info['fijo']:
-            horas_feriado_domingo_total = group[group['es_feriado_domingo'] == True]['horas_trabajadas'].sum()
-            resultado['Horas Feriado/Domingo'] = round(horas_feriado_domingo_total, 2)
-            resultado['Pago Feriado/Domingo (50% adicional)'] = round(pago_feriado_domingo, 2)
-        else:
-            resultado['Horas Feriado/Domingo'] = 0.0
-            resultado['Pago Feriado/Domingo (50% adicional)'] = 0.0
+        # Agregar información de feriados/domingos y bono
+        horas_feriado_domingo_total = group[group['es_feriado_domingo'] == True]['horas_trabajadas'].sum()
+        resultado['Horas Feriado/Domingo'] = round(horas_feriado_domingo_total, 2)
+        resultado['Pago Feriado/Domingo (50% adicional)'] = round(pago_feriado_domingo, 2)
+        resultado['Bono Horas Extra'] = round(bono_horas_extra, 2)
         
         payroll_results.append(resultado)
     
@@ -520,6 +737,8 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     print(f"Total de pagos: {len(payroll_df)}")
     print(f"Total horas extra (después 3 PM): {payroll_df['Horas Extra (después 3 PM)'].sum():.2f}")
     print(f"Total pago extra (25% adicional): ${payroll_df['Pago Extra (25% adicional)'].sum():,.2f}")
+    if 'Bono Horas Extra' in payroll_df.columns:
+        print(f"Total bono horas extra: ${payroll_df['Bono Horas Extra'].sum():,.2f}")
     print(f"Total horas feriado/domingo: {payroll_df['Horas Feriado/Domingo'].sum():.2f}")
     print(f"Total pago feriado/domingo (50% adicional): ${payroll_df['Pago Feriado/Domingo (50% adicional)'].sum():,.2f}")
     print(f"Total a pagar: ${payroll_df['Pago Quincenal'].sum():,.2f}")
@@ -529,12 +748,14 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     payroll_df['Fecha de Pago'] = fecha_pago.strftime('%d/%m/%Y')
     
     # Reordenar columnas para que la fecha de pago esté más visible
-    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Fijo', 'Salario Base', 
+    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Salario Base', 
                 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
                 'Total Horas Trabajadas', 'Horas Extra (después 3 PM)', 
-                'Pago Extra (25% adicional)', 'Horas Feriado/Domingo',
+                'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
                 'Pago Feriado/Domingo (50% adicional)', 'Pago Quincenal', 
                 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
+    # Solo incluir columnas que existen en el DataFrame
+    columnas = [col for col in columnas if col in payroll_df.columns]
     payroll_df = payroll_df[columnas]
     
     # Guardar en Excel
@@ -663,11 +884,12 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     print('\nIngrese los datos del empleado:')
     nombre = input('Nombre: ').strip()
     cargo = input('Cargo: ').strip()
-    salario_str = input('Salario: ').strip()
+    salario_str = input('Salario (por hora): ').strip()
     n_de_cuenta = input('Numero de cuenta: ').strip()
     banco = input('Banco: ').strip()
     tipo_de_cuenta = input('Tipo de cuenta: ').strip()
-    fijo = input('Fijo (S/N): ').strip().upper()
+    salario_fijo = input('Salario Fijo (S/N) - Cobra lo mismo sin importar horas: ').strip().upper()
+    empleado_fijo = input('Empleado Fijo (S/N) - Tiene sueldo mínimo + bono por horas extra: ').strip().upper()
     
     # Validar y convertir salario
     try:
@@ -676,8 +898,29 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
         print("[ERROR] El salario debe ser un número válido")
         return None
     
-    # Convertir fijo a booleano
-    fijo_bool = (fijo == 'S')
+    # Convertir salario_fijo a booleano
+    salario_fijo_bool = (salario_fijo == 'S')
+    
+    # Convertir empleado_fijo a booleano
+    empleado_fijo_bool = (empleado_fijo == 'S')
+    
+    # Validar que no sean ambos tipos a la vez
+    if salario_fijo_bool and empleado_fijo_bool:
+        print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+        return None
+    
+    # Si es empleado_fijo, solicitar salario_minimo
+    salario_minimo = 0.0
+    if empleado_fijo_bool:
+        salario_minimo_str = input('Salario Mínimo (mensual): ').strip()
+        try:
+            salario_minimo = float(salario_minimo_str)
+            if salario_minimo <= 0:
+                print("[ERROR] El salario mínimo debe ser mayor a 0")
+                return None
+        except ValueError:
+            print("[ERROR] El salario mínimo debe ser un número válido")
+            return None
     
     # Validación final: verificar que el ID no exista (por si el archivo cambió)
     try:
@@ -697,7 +940,9 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
         'n_de_cuenta': [n_de_cuenta],
         'banco': [banco],
         'tipo_de_cuenta': [tipo_de_cuenta],
-        'fijo': [fijo_bool]
+        'salario_fijo': [1 if salario_fijo_bool else 0],
+        'empleado_fijo': [1 if empleado_fijo_bool else 0],
+        'salario_minimo': [salario_minimo if empleado_fijo_bool else 0]
     })
     
     # Concatenar con el DataFrame existente
@@ -845,7 +1090,13 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     print(f"  Número de cuenta: {empleado_actual.get('n_de_cuenta', 'N/A')}")
     print(f"  Banco: {empleado_actual.get('banco', 'N/A')}")
     print(f"  Tipo de cuenta: {empleado_actual.get('tipo_de_cuenta', 'N/A')}")
-    print(f"  Fijo: {'Sí' if empleado_actual['fijo'] else 'No'}")
+    salario_fijo_actual = bool(empleado_actual.get('salario_fijo', False))
+    empleado_fijo_actual = bool(empleado_actual.get('empleado_fijo', False))
+    salario_minimo_actual = empleado_actual.get('salario_minimo', 0) if pd.notna(empleado_actual.get('salario_minimo')) else 0
+    print(f"  Salario Fijo: {'Sí' if salario_fijo_actual else 'No'}")
+    print(f"  Empleado Fijo: {'Sí' if empleado_fijo_actual else 'No'}")
+    if empleado_fijo_actual:
+        print(f"  Salario Mínimo: {salario_minimo_actual}")
     
     print('\nIngrese los nuevos datos (presione Enter para mantener el valor actual):')
     
@@ -880,11 +1131,38 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     if not tipo_de_cuenta:
         tipo_de_cuenta = empleado_actual.get('tipo_de_cuenta', '')
     
-    fijo_str = input(f'Fijo (S/N) [{"S" if empleado_actual["fijo"] else "N"}]: ').strip().upper()
-    if not fijo_str:
-        fijo_bool = empleado_actual['fijo']
+    salario_fijo_str = input(f'Salario Fijo (S/N) [{"S" if salario_fijo_actual else "N"}]: ').strip().upper()
+    if not salario_fijo_str:
+        salario_fijo_bool = salario_fijo_actual
     else:
-        fijo_bool = (fijo_str == 'S')
+        salario_fijo_bool = (salario_fijo_str == 'S')
+    
+    empleado_fijo_str = input(f'Empleado Fijo (S/N) [{"S" if empleado_fijo_actual else "N"}]: ').strip().upper()
+    if not empleado_fijo_str:
+        empleado_fijo_bool = empleado_fijo_actual
+    else:
+        empleado_fijo_bool = (empleado_fijo_str == 'S')
+    
+    # Validar que no sean ambos tipos a la vez
+    if salario_fijo_bool and empleado_fijo_bool:
+        print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+        return None
+    
+    # Si es empleado_fijo, solicitar salario_minimo
+    salario_minimo = salario_minimo_actual
+    if empleado_fijo_bool:
+        salario_minimo_str = input(f'Salario Mínimo (mensual) [{salario_minimo_actual}]: ').strip()
+        if salario_minimo_str:
+            try:
+                salario_minimo = float(salario_minimo_str)
+                if salario_minimo <= 0:
+                    print("[ERROR] El salario mínimo debe ser mayor a 0. Se mantendrá el valor actual.")
+                    salario_minimo = salario_minimo_actual
+            except ValueError:
+                print("[ERROR] El salario mínimo debe ser un número válido. Se mantendrá el valor actual.")
+                salario_minimo = salario_minimo_actual
+    elif not empleado_fijo_bool:
+        salario_minimo = 0.0
     
     # Modificar el DataFrame usando .loc
     employees_df.loc[indice, 'nombre'] = nombre
@@ -893,7 +1171,9 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     employees_df.loc[indice, 'n_de_cuenta'] = n_de_cuenta
     employees_df.loc[indice, 'banco'] = banco
     employees_df.loc[indice, 'tipo_de_cuenta'] = tipo_de_cuenta
-    employees_df.loc[indice, 'fijo'] = fijo_bool
+    employees_df.loc[indice, 'salario_fijo'] = 1 if salario_fijo_bool else 0
+    employees_df.loc[indice, 'empleado_fijo'] = 1 if empleado_fijo_bool else 0
+    employees_df.loc[indice, 'salario_minimo'] = salario_minimo if empleado_fijo_bool else 0
     
     # Guardar en Excel
     try:
@@ -917,7 +1197,7 @@ def main():
         print('Calculando nomina quincenal...')
         result = calculate_payroll_quincenal(
             employees_file="employees_information.xlsx",
-            hours_file="hours_worked.xlsx",
+            hours_file="Reporte de Asistencia.xlsx",
             output_file=None,
             quincena_fecha=None)
         if result is not None:

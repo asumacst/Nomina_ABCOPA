@@ -154,12 +154,17 @@ FUNCIONALIDADES:
 
 ARCHIVOS REQUERIDOS:
 • employees_information.xlsx - Información de empleados
-• hours_worked.xlsx - Registros de asistencia
+• Reporte de Asistencia.xlsx - Reporte de asistencia del escáner biométrico
+
+TIPOS DE EMPLEADOS:
+• Salario Fijo: Cobran lo mismo sin importar las horas trabajadas
+• Empleado Fijo: Tienen un sueldo mínimo garantizado + bono por horas extra
+  si trabajan más de las horas requeridas para ese sueldo
+• Por Horas: Reciben pago según horas trabajadas con bonos por horas extra
 
 IMPORTANTE:
-• Los empleados fijos reciben el mismo salario sin importar las horas
-• Los empleados por horas reciben pago según horas trabajadas
 • Se requiere exactamente 2 registros por día por empleado (entrada y salida)
+• Los empleados fijos no pueden ser ambos tipos a la vez
         """
         messagebox.showinfo("Información del Sistema", info_text)
 
@@ -320,7 +325,7 @@ class CalculatePayrollWindow:
         # Archivo de horas
         tk.Label(
             files_frame,
-            text="Archivo de Horas Trabajadas:",
+            text="Archivo de Reporte de Asistencia:",
             font=('Arial', 10),
             bg=COLOR_BG_FRAME,
             fg=COLOR_TEXT
@@ -329,7 +334,7 @@ class CalculatePayrollWindow:
         hours_frame = tk.Frame(files_frame, bg=COLOR_BG_FRAME)
         hours_frame.pack(fill=tk.X, pady=5)
         
-        self.hours_file_var = tk.StringVar(value="hours_worked.xlsx")
+        self.hours_file_var = tk.StringVar(value="Reporte de Asistencia.xlsx")
         hours_entry = tk.Entry(hours_frame, textvariable=self.hours_file_var, font=('Arial', 10), bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
         hours_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
@@ -457,7 +462,7 @@ class CalculatePayrollWindow:
             return
         
         if not hours_file:
-            messagebox.showerror("Error", "Debe especificar el archivo de horas trabajadas")
+            messagebox.showerror("Error", "Debe especificar el archivo de reporte de asistencia")
             return
         
         if not os.path.exists(employees_file):
@@ -489,7 +494,7 @@ class CalculatePayrollWindow:
         # Mostrar mensaje de inicio
         self.message_text.insert(tk.END, "Calculando nómina...\n")
         self.message_text.insert(tk.END, f"Archivo de empleados: {employees_file}\n")
-        self.message_text.insert(tk.END, f"Archivo de horas: {hours_file}\n")
+        self.message_text.insert(tk.END, f"Archivo de reporte de asistencia: {hours_file}\n")
         if quincena_fecha:
             self.message_text.insert(tk.END, f"Fecha de referencia: {quincena_fecha}\n")
         self.message_text.insert(tk.END, "-" * 60 + "\n\n")
@@ -816,11 +821,13 @@ class AddEmployeeWindow:
             ("ID (deje vacío para auto-generar):", "id"),
             ("Nombre:", "nombre"),
             ("Cargo:", "cargo"),
-            ("Salario:", "salario"),
+            ("Salario (por hora):", "salario"),
             ("Número de Cuenta:", "n_de_cuenta"),
             ("Banco:", "banco"),
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
-            ("Fijo (S/N):", "fijo")
+            ("Salario Fijo (S/N) - Cobra lo mismo sin importar horas:", "salario_fijo"),
+            ("Empleado Fijo (S/N) - Tiene sueldo mínimo + bono:", "empleado_fijo"),
+            ("Salario Mínimo (mensual, solo si es Empleado Fijo):", "salario_minimo")
         ]
         
         self.vars = {}
@@ -890,8 +897,28 @@ class AddEmployeeWindow:
         inputs.append(self.vars['n_de_cuenta'].get().strip())  # Número de cuenta
         inputs.append(self.vars['banco'].get().strip())  # Banco
         inputs.append(self.vars['tipo_de_cuenta'].get().strip())  # Tipo de cuenta
-        fijo_val = self.vars['fijo'].get().strip().upper()
-        inputs.append('S' if fijo_val == 'S' else 'N')  # Fijo
+        salario_fijo_val = self.vars['salario_fijo'].get().strip().upper()
+        inputs.append('S' if salario_fijo_val == 'S' else 'N')  # Salario Fijo
+        empleado_fijo_val = self.vars['empleado_fijo'].get().strip().upper()
+        inputs.append('S' if empleado_fijo_val == 'S' else 'N')  # Empleado Fijo
+        # Validar que no sean ambos
+        if salario_fijo_val == 'S' and empleado_fijo_val == 'S':
+            messagebox.showerror("Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+            return
+        # Si es empleado_fijo, validar salario_minimo
+        if empleado_fijo_val == 'S':
+            salario_minimo_val = self.vars['salario_minimo'].get().strip()
+            if not salario_minimo_val:
+                messagebox.showerror("Error", "El salario mínimo es obligatorio para empleados fijos")
+                return
+            try:
+                float(salario_minimo_val)
+            except ValueError:
+                messagebox.showerror("Error", "El salario mínimo debe ser un número válido")
+                return
+            inputs.append(salario_minimo_val)  # Salario Mínimo
+        else:
+            inputs.append('')  # Salario Mínimo vacío si no es empleado fijo
         
         input_index = [0]
         
@@ -1037,11 +1064,13 @@ class ModifyEmployeeWindow:
         fields = [
             ("Nombre:", "nombre"),
             ("Cargo:", "cargo"),
-            ("Salario:", "salario"),
+            ("Salario (por hora):", "salario"),
             ("Número de Cuenta:", "n_de_cuenta"),
             ("Banco:", "banco"),
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
-            ("Fijo (S/N):", "fijo")
+            ("Salario Fijo (S/N):", "salario_fijo"),
+            ("Empleado Fijo (S/N):", "empleado_fijo"),
+            ("Salario Mínimo (mensual):", "salario_minimo")
         ]
         
         self.vars = {}
@@ -1136,7 +1165,12 @@ class ModifyEmployeeWindow:
             self.vars['n_de_cuenta'].set(str(emp.get('n_de_cuenta', '')))
             self.vars['banco'].set(str(emp.get('banco', '')))
             self.vars['tipo_de_cuenta'].set(str(emp.get('tipo_de_cuenta', '')))
-            self.vars['fijo'].set('S' if emp['fijo'] else 'N')
+            salario_fijo_val = bool(emp.get('salario_fijo', False))
+            empleado_fijo_val = bool(emp.get('empleado_fijo', False))
+            salario_minimo_val = emp.get('salario_minimo', 0) if pd.notna(emp.get('salario_minimo')) else 0
+            self.vars['salario_fijo'].set('S' if salario_fijo_val else 'N')
+            self.vars['empleado_fijo'].set('S' if empleado_fijo_val else 'N')
+            self.vars['salario_minimo'].set(str(salario_minimo_val))
             
             # Habilitar campos
             for entry in self.entries:
@@ -1168,7 +1202,9 @@ class ModifyEmployeeWindow:
             self.vars['n_de_cuenta'].get().strip() or '',  # Número de cuenta
             self.vars['banco'].get().strip() or '',  # Banco
             self.vars['tipo_de_cuenta'].get().strip() or '',  # Tipo de cuenta
-            self.vars['fijo'].get().strip().upper() or ''  # Fijo
+            self.vars['salario_fijo'].get().strip().upper() or '',  # Salario Fijo
+            self.vars['empleado_fijo'].get().strip().upper() or '',  # Empleado Fijo
+            self.vars['salario_minimo'].get().strip() or ''  # Salario Mínimo
         ]
         
         input_index = [0]
