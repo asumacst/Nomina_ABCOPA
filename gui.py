@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QTextEdit, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QScrollArea, QGroupBox, QFrame, QDialog,
-    QDialogButtonBox, QFormLayout, QSizePolicy
+    QDialogButtonBox, QFormLayout, QSizePolicy, QRadioButton
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
 from PyQt5.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
@@ -41,26 +41,62 @@ class GruvboxColors:
     
     # Neutral
     GRAY = '#928374'         # gray
+    BUTTON_TEXT = '#282828'  # texto sobre botones de acento
+
+
+# Paleta Aqua/Tema claro (#E3FDFD, #CBF1F5, #A6E3E9, #71C9CE) con texto negro
+class AquaColors:
+    # Backgrounds (del más claro al más oscuro de la paleta)
+    BG_DARK = '#E3FDFD'      # más claro - fondo principal
+    BG_DARKER = '#CBF1F5'
+    BG_LIGHT = '#A6E3E9'
+    BG_LIGHTER = '#71C9CE'   # más oscuro - acentos
+
+    # Foregrounds - negro para contraste
+    FG = '#000000'
+    FG_DARK = '#333333'
+
+    # Accent colors (usando la paleta)
+    BLUE = '#71C9CE'
+    AQUA = '#71C9CE'
+    GREEN = '#71C9CE'
+    YELLOW = '#A6E3E9'
+    ORANGE = '#71C9CE'
+    RED = '#d9534f'          # rojo para Salir (contraste sobre claro)
+    PURPLE = '#71C9CE'
+
+    GRAY = '#666666'
+    BUTTON_TEXT = '#000000'  # negro sobre botones de acento
+
+
+# Tema actual y selector
+CURRENT_THEME = 'aqua'
+
+
+def get_colors():
+    """Devuelve la paleta del tema actual."""
+    return GruvboxColors if CURRENT_THEME == 'gruvbox' else AquaColors
 
 
 class GruvboxStyle:
     @staticmethod
-    def apply_style(app):
-        """Aplica el estilo Gruvbox a la aplicación"""
+    def apply_style(app, theme='gruvbox'):
+        """Aplica el estilo a la aplicación según el tema (gruvbox o aqua)."""
+        C = GruvboxColors if theme == 'gruvbox' else AquaColors
         style = f"""
         QMainWindow {{
-            background-color: {GruvboxColors.BG_DARK};
-            color: {GruvboxColors.FG};
+            background-color: {C.BG_DARK};
+            color: {C.FG};
         }}
         QWidget {{
-            background-color: {GruvboxColors.BG_DARK};
-            color: {GruvboxColors.FG};
+            background-color: {C.BG_DARK};
+            color: {C.FG};
             font-family: 'Segoe UI', Arial, sans-serif;
         }}
         QPushButton {{
-            background-color: {GruvboxColors.BG_LIGHT};
-            color: {GruvboxColors.FG};
-            border: 2px solid {GruvboxColors.BG_LIGHTER};
+            background-color: {C.BG_LIGHT};
+            color: {C.FG};
+            border: 2px solid {C.BG_LIGHTER};
             border-radius: 6px;
             padding: 10px 20px;
             font-weight: bold;
@@ -68,40 +104,40 @@ class GruvboxStyle:
             min-height: 40px;
         }}
         QPushButton:hover {{
-            background-color: {GruvboxColors.BG_LIGHTER};
-            border-color: {GruvboxColors.BLUE};
+            background-color: {C.BG_LIGHTER};
+            border-color: {C.BLUE};
         }}
         QPushButton:pressed {{
-            background-color: {GruvboxColors.BG_LIGHTER};
-            border-color: {GruvboxColors.AQUA};
+            background-color: {C.BG_LIGHTER};
+            border-color: {C.AQUA};
         }}
         QPushButton:disabled {{
-            background-color: {GruvboxColors.BG_DARKER};
-            color: {GruvboxColors.GRAY};
-            border-color: {GruvboxColors.BG_DARKER};
+            background-color: {C.BG_DARKER};
+            color: {C.GRAY};
+            border-color: {C.BG_DARKER};
         }}
         QLabel {{
-            color: {GruvboxColors.FG};
+            color: {C.FG};
             background-color: transparent;
         }}
         QLineEdit, QTextEdit {{
-            background-color: {GruvboxColors.BG_LIGHT};
-            color: {GruvboxColors.FG};
-            border: 2px solid {GruvboxColors.BG_LIGHTER};
+            background-color: {C.BG_LIGHT};
+            color: {C.FG};
+            border: 2px solid {C.BG_LIGHTER};
             border-radius: 4px;
             padding: 6px;
             font-size: 11pt;
         }}
         QLineEdit:focus, QTextEdit:focus {{
-            border-color: {GruvboxColors.BLUE};
+            border-color: {C.BLUE};
         }}
         QGroupBox {{
-            border: 2px solid {GruvboxColors.BG_LIGHTER};
+            border: 2px solid {C.BG_LIGHTER};
             border-radius: 6px;
             margin-top: 10px;
             padding-top: 10px;
             font-weight: bold;
-            color: {GruvboxColors.AQUA};
+            color: {C.AQUA};
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
@@ -109,128 +145,174 @@ class GruvboxStyle:
             padding: 0 5px;
         }}
         QTableWidget {{
-            background-color: {GruvboxColors.BG_LIGHT};
-            color: {GruvboxColors.FG};
-            border: 1px solid {GruvboxColors.BG_LIGHTER};
-            gridline-color: {GruvboxColors.BG_LIGHTER};
-            selection-background-color: {GruvboxColors.BLUE};
-            selection-color: {GruvboxColors.BG_DARK};
-            alternate-background-color: {GruvboxColors.BG_LIGHT};
+            background-color: {C.BG_LIGHT};
+            color: {C.FG};
+            border: 1px solid {C.BG_LIGHTER};
+            gridline-color: {C.BG_LIGHTER};
+            selection-background-color: {C.BLUE};
+            selection-color: {C.BG_DARK};
+            alternate-background-color: {C.BG_LIGHT};
         }}
         QTableWidget::item {{
-            background-color: {GruvboxColors.BG_LIGHT};
-            color: {GruvboxColors.FG};
+            background-color: {C.BG_LIGHT};
+            color: {C.FG};
         }}
         QTableWidget::item:selected {{
-            background-color: {GruvboxColors.BLUE};
-            color: {GruvboxColors.BG_DARK};
+            background-color: {C.BLUE};
+            color: {C.BG_DARK};
         }}
         QHeaderView::section {{
-            background-color: {GruvboxColors.BG_LIGHTER};
-            color: {GruvboxColors.AQUA};
+            background-color: {C.BG_LIGHTER};
+            color: {C.AQUA};
             padding: 8px;
-            border: 1px solid {GruvboxColors.BG_LIGHTER};
+            border: 1px solid {C.BG_LIGHTER};
             font-weight: bold;
         }}
         QScrollArea {{
             border: none;
-            background-color: {GruvboxColors.BG_DARK};
+            background-color: {C.BG_DARK};
         }}
         QScrollBar:vertical {{
-            background-color: {GruvboxColors.BG_LIGHT};
+            background-color: {C.BG_LIGHT};
             width: 12px;
             border: none;
         }}
         QScrollBar::handle:vertical {{
-            background-color: {GruvboxColors.BG_LIGHTER};
+            background-color: {C.BG_LIGHTER};
             min-height: 20px;
             border-radius: 6px;
         }}
         QScrollBar::handle:vertical:hover {{
-            background-color: {GruvboxColors.BLUE};
+            background-color: {C.BLUE};
         }}
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
             height: 0px;
         }}
         QDialog {{
-            background-color: {GruvboxColors.BG_DARK};
+            background-color: {C.BG_DARK};
+        }}
+        QRadioButton {{
+            color: {C.FG};
         }}
         """
         app.setStyleSheet(style)
 
 
 class NominaApp(QMainWindow):
-    def __init__(self):
+    def __init__(self, app):
         super().__init__()
+        self.app = app
         self.setWindowTitle("Sistema de Nómina ABCOPA")
         self.setMinimumSize(1000, 700)
-        
+        self._logo_has_image = False
+        self._logo_path = "logo.png"
+
         # Widget central
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        
+
         # Layout principal
         main_layout = QVBoxLayout(central_widget)
         main_layout.setAlignment(Qt.AlignCenter)
         main_layout.setSpacing(20)
         main_layout.setContentsMargins(40, 30, 40, 30)
-        
-        # Logo y título ABCOPA
+
+        # Logo y título Quintas del Este
         logo_container = QVBoxLayout()
         logo_container.setAlignment(Qt.AlignCenter)
         logo_container.setSpacing(10)
-        
-        # Logo
-        logo_label = QLabel()
-        logo_path = "logo.png"  # El usuario debe proporcionar este archivo
-        if os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            # Escalar manteniendo aspecto
+
+        self.logo_label = QLabel()
+        if os.path.exists(self._logo_path):
+            pixmap = QPixmap(self._logo_path)
             scaled_pixmap = pixmap.scaled(300, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            logo_label.setPixmap(scaled_pixmap)
+            self.logo_label.setPixmap(scaled_pixmap)
+            self._logo_has_image = True
         else:
-            # Placeholder si no existe el logo
-            logo_label.setText("Quintas del Este")
-            logo_label.setStyleSheet(f"font-size: 48pt; font-weight: bold; color: {GruvboxColors.AQUA};")
-        logo_label.setAlignment(Qt.AlignCenter)
-        logo_container.addWidget(logo_label)
-        
-        # Título Quintas del Este
-        title_label = QLabel("Quintas del Este")
-        title_label.setAlignment(Qt.AlignCenter)
-        title_label.setStyleSheet(f"font-size: 36pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
-        logo_container.addWidget(title_label)
-        
+            self.logo_label.setText("Quintas del Este")
+            self._logo_has_image = False
+        self.logo_label.setAlignment(Qt.AlignCenter)
+        logo_container.addWidget(self.logo_label)
+
+        self.title_label = QLabel("Quintas del Este")
+        self.title_label.setAlignment(Qt.AlignCenter)
+        logo_container.addWidget(self.title_label)
+
         main_layout.addLayout(logo_container)
-        
-        # Título Sistema de Nomina
-        subtitle_label = QLabel("Sistema de Nomina")
-        subtitle_label.setAlignment(Qt.AlignCenter)
-        subtitle_label.setStyleSheet(f"font-size: 28pt; font-weight: bold; color: {GruvboxColors.YELLOW}; margin: 20px;")
-        main_layout.addWidget(subtitle_label)
-        
+
+        self.subtitle_label = QLabel("Sistema de Nomina")
+        self.subtitle_label.setAlignment(Qt.AlignCenter)
+        main_layout.addWidget(self.subtitle_label)
+
+        # Caja de selección de tema
+        theme_group = QGroupBox("Tema")
+        theme_layout = QHBoxLayout(theme_group)
+        theme_layout.setAlignment(Qt.AlignCenter)
+        self.theme_gruvbox = QRadioButton("Gruvbox (oscuro)")
+        self.theme_aqua = QRadioButton("Aqua (claro)")
+        self.theme_aqua.setChecked(True)
+        theme_layout.addWidget(self.theme_gruvbox)
+        theme_layout.addWidget(self.theme_aqua)
+        self.theme_gruvbox.toggled.connect(self._on_theme_changed)
+        self.theme_aqua.toggled.connect(self._on_theme_changed)
+        main_layout.addWidget(theme_group)
+
         # Botones principales
         button_layout = QVBoxLayout()
         button_layout.setAlignment(Qt.AlignCenter)
         button_layout.setSpacing(15)
-        
+
+        self.main_buttons = []
         buttons = [
             ("Calcular Nómina Quincenal", self.open_calculate_payroll),
             ("Gestionar Empleados", self.open_manage_employees),
             ("Ver Nómina", self.view_payroll),
             ("Ver Información", self.show_info),
-            ("Salir", self.close)
+            ("Salir", self.close),
         ]
-        
         for text, command in buttons:
             btn = QPushButton(text)
             btn.clicked.connect(command)
-            # Usar AQUA para todos excepto Salir (que usa RED)
-            color = GruvboxColors.RED if text == "Salir" else GruvboxColors.AQUA
+            self.main_buttons.append((btn, text == "Salir"))
+            button_layout.addWidget(btn)
+
+        main_layout.addLayout(button_layout)
+        self._apply_theme_to_widgets()
+
+        # Espaciador para centrar verticalmente
+        main_layout.addStretch()
+
+    def _on_theme_changed(self):
+        global CURRENT_THEME
+        if self.theme_aqua.isChecked():
+            CURRENT_THEME = 'aqua'
+        else:
+            CURRENT_THEME = 'gruvbox'
+        GruvboxStyle.apply_style(self.app, CURRENT_THEME)
+        self._apply_theme_to_widgets()
+
+    def _apply_theme_to_widgets(self):
+        global CURRENT_THEME
+        C = get_colors()
+        # En modo Aqua (claro) los títulos van en negro para mejor contraste
+        title_color = C.FG if CURRENT_THEME == 'aqua' else C.AQUA
+        subtitle_color = C.FG if CURRENT_THEME == 'aqua' else C.YELLOW
+        if not self._logo_has_image:
+            self.logo_label.setStyleSheet(
+                f"font-size: 48pt; font-weight: bold; color: {title_color};"
+            )
+        self.title_label.setStyleSheet(
+            f"font-size: 36pt; font-weight: bold; color: {title_color}; margin: 10px;"
+        )
+        self.subtitle_label.setStyleSheet(
+            f"font-size: 28pt; font-weight: bold; color: {subtitle_color}; margin: 20px;"
+        )
+        for btn, is_exit in self.main_buttons:
+            color = C.RED if is_exit else C.AQUA
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background-color: {color};
-                    color: {GruvboxColors.BG_DARK};
+                    color: {C.BUTTON_TEXT};
                     border: 2px solid {color};
                     border-radius: 8px;
                     padding: 15px 30px;
@@ -240,21 +322,15 @@ class NominaApp(QMainWindow):
                     min-height: 50px;
                 }}
                 QPushButton:hover {{
-                    background-color: {GruvboxColors.BG_LIGHT};
+                    background-color: {C.BG_LIGHT};
                     color: {color};
                     border-color: {color};
                 }}
                 QPushButton:pressed {{
-                    background-color: {GruvboxColors.BG_LIGHTER};
+                    background-color: {C.BG_LIGHTER};
                 }}
             """)
-            button_layout.addWidget(btn)
-        
-        main_layout.addLayout(button_layout)
-        
-        # Espaciador para centrar verticalmente
-        main_layout.addStretch()
-    
+
     def open_calculate_payroll(self):
         """Abre la ventana para calcular nómina"""
         self.calc_window = CalculatePayrollWindow(self)
@@ -349,13 +425,13 @@ class ViewPayrollWindow(QDialog):
         # Título
         title = QLabel("NÓMINA QUINCENAL")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 24pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 24pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # Información del archivo
         file_info = QLabel(f"Archivo: {filename}")
         file_info.setAlignment(Qt.AlignCenter)
-        file_info.setStyleSheet(f"font-size: 12pt; color: {GruvboxColors.FG_DARK};")
+        file_info.setStyleSheet(f"font-size: 12pt; color: {get_colors().FG_DARK};")
         layout.addWidget(file_info)
         
         # Tabla con scroll horizontal
@@ -391,17 +467,17 @@ class ViewPayrollWindow(QDialog):
         # Asegurar fondo oscuro para todas las celdas
         table.setStyleSheet(f"""
             QTableWidget {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.FG};
-                gridline-color: {GruvboxColors.BG_LIGHTER};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                gridline-color: {get_colors().BG_LIGHTER};
             }}
             QTableWidget::item {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.FG};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
             }}
             QTableWidget::item:selected {{
-                background-color: {GruvboxColors.BLUE};
-                color: {GruvboxColors.BG_DARK};
+                background-color: {get_colors().BLUE};
+                color: {get_colors().BUTTON_TEXT};
             }}
         """)
         
@@ -413,21 +489,21 @@ class ViewPayrollWindow(QDialog):
         total_layout.setAlignment(Qt.AlignCenter)
         
         total_label = QLabel("TOTAL GENERAL A PAGAR:")
-        total_label.setStyleSheet(f"font-size: 16pt; font-weight: bold; color: {GruvboxColors.AQUA};")
+        total_label.setStyleSheet(f"font-size: 16pt; font-weight: bold; color: {get_colors().AQUA};")
         total_layout.addWidget(total_label)
         
         total_value = QLabel(f"${total_general:,.2f}")
         total_value.setStyleSheet(f"""
             font-size: 20pt; font-weight: bold;
-            background-color: {GruvboxColors.YELLOW};
-            color: {GruvboxColors.BG_DARK};
+            background-color: {get_colors().YELLOW};
+            color: {get_colors().BUTTON_TEXT};
             padding: 15px 30px;
             border-radius: 8px;
         """)
         total_layout.addWidget(total_value)
         
         info_label = QLabel(f"({len(df)} empleados)")
-        info_label.setStyleSheet(f"font-size: 12pt; color: {GruvboxColors.FG_DARK}; margin-left: 15px;")
+        info_label.setStyleSheet(f"font-size: 12pt; color: {get_colors().FG_DARK}; margin-left: 15px;")
         total_layout.addWidget(info_label)
         
         layout.addWidget(total_frame)
@@ -437,16 +513,16 @@ class ViewPayrollWindow(QDialog):
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         layout.addWidget(close_btn, alignment=Qt.AlignCenter)
@@ -498,7 +574,7 @@ class CalculatePayrollWindow(QDialog):
         # Título
         title = QLabel("CALCULAR NÓMINA QUINCENAL")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # Botones principales
@@ -509,17 +585,17 @@ class CalculatePayrollWindow(QDialog):
         self.calculate_btn.clicked.connect(self.calculate_payroll)
         self.calculate_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
                 min-width: 150px;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(self.calculate_btn)
@@ -529,17 +605,17 @@ class CalculatePayrollWindow(QDialog):
         self.continue_btn.setEnabled(False)
         self.continue_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
                 min-width: 150px;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(self.continue_btn)
@@ -548,17 +624,17 @@ class CalculatePayrollWindow(QDialog):
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
                 min-width: 150px;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(close_btn)
@@ -604,7 +680,7 @@ class CalculatePayrollWindow(QDialog):
         date_layout = QVBoxLayout(date_group)
         
         date_hint = QLabel("Deje vacío para usar la quincena más reciente")
-        date_hint.setStyleSheet(f"color: {GruvboxColors.FG_DARK}; font-style: italic;")
+        date_hint.setStyleSheet(f"color: {get_colors().FG_DARK}; font-style: italic;")
         date_layout.addWidget(date_hint)
         
         self.date_edit = QLineEdit()
@@ -627,7 +703,7 @@ class CalculatePayrollWindow(QDialog):
         # Indicador de estado
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.AQUA};")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().AQUA};")
         layout.addWidget(self.status_label)
         
         self.calc_thread = None
@@ -648,7 +724,7 @@ class CalculatePayrollWindow(QDialog):
         self.calculate_btn.setEnabled(True)
         self.continue_btn.setEnabled(False)
         self.status_label.setText("")
-        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.AQUA};")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().AQUA};")
     
     def calculate_payroll(self):
         """Calcula la nómina"""
@@ -688,7 +764,7 @@ class CalculatePayrollWindow(QDialog):
         self.calculate_btn.setEnabled(False)
         self.continue_btn.setEnabled(False)
         self.status_label.setText("⏳ Calculando nómina... Por favor espere.")
-        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.YELLOW};")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().YELLOW};")
         
         # Mostrar mensaje de inicio
         self.message_text.append("Calculando nómina...")
@@ -713,7 +789,7 @@ class CalculatePayrollWindow(QDialog):
             self.message_text.append("✓ NÓMINA CALCULADA EXITOSAMENTE")
             self.message_text.append("=" * 60)
             self.status_label.setText("✓ Nómina calculada exitosamente. Presione 'Continuar' para realizar otra operación.")
-            self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.GREEN};")
+            self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().GREEN};")
             self.calculate_btn.setEnabled(True)
             self.continue_btn.setEnabled(True)
             QMessageBox.information(
@@ -723,7 +799,7 @@ class CalculatePayrollWindow(QDialog):
             )
         else:
             self.status_label.setText("✗ Error al calcular la nómina. Revise los mensajes.")
-            self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.RED};")
+            self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().RED};")
             self.calculate_btn.setEnabled(True)
             self.continue_btn.setEnabled(True)
             QMessageBox.critical(
@@ -736,7 +812,7 @@ class CalculatePayrollWindow(QDialog):
         """Muestra un error en la interfaz"""
         self.message_text.append(f"\nERROR: {error_msg}")
         self.status_label.setText(f"✗ Error: {error_msg[:50]}...")
-        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.RED};")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().RED};")
         self.calculate_btn.setEnabled(True)
         self.continue_btn.setEnabled(True)
         QMessageBox.critical(
@@ -759,7 +835,7 @@ class ManageEmployeesWindow(QDialog):
         # Título
         title = QLabel("GESTIONAR EMPLEADOS")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # Botones de acción
@@ -778,11 +854,11 @@ class ManageEmployeesWindow(QDialog):
             btn = QPushButton(text)
             btn.clicked.connect(command)
             # Usar AQUA para todos excepto eliminar (que usa RED)
-            color = GruvboxColors.RED if "Eliminar" in text else GruvboxColors.AQUA
+            color = get_colors().RED if "Eliminar" in text else get_colors().AQUA
             btn.setStyleSheet(f"""
                 QPushButton {{
                     background-color: {color};
-                    color: {GruvboxColors.BG_DARK};
+                    color: {get_colors().BUTTON_TEXT};
                     border: 2px solid {color};
                     border-radius: 6px;
                     padding: 12px 25px;
@@ -790,7 +866,7 @@ class ManageEmployeesWindow(QDialog):
                     min-width: 250px;
                 }}
                 QPushButton:hover {{
-                    background-color: {GruvboxColors.BG_LIGHT};
+                    background-color: {get_colors().BG_LIGHT};
                     color: {color};
                 }}
             """)
@@ -803,16 +879,16 @@ class ManageEmployeesWindow(QDialog):
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.FG};
-                border: 2px solid {GruvboxColors.BG_LIGHTER};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                border: 2px solid {get_colors().BG_LIGHTER};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHTER};
-                border-color: {GruvboxColors.BLUE};
+                background-color: {get_colors().BG_LIGHTER};
+                border-color: {get_colors().BLUE};
             }}
         """)
         layout.addWidget(close_btn, alignment=Qt.AlignCenter)
@@ -860,7 +936,7 @@ class ViewEmployeesWindow(QDialog):
         # Título
         title = QLabel("LISTA DE EMPLEADOS")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # Tabla
@@ -888,17 +964,17 @@ class ViewEmployeesWindow(QDialog):
         # Asegurar fondo oscuro para todas las celdas
         table.setStyleSheet(f"""
             QTableWidget {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.FG};
-                gridline-color: {GruvboxColors.BG_LIGHTER};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                gridline-color: {get_colors().BG_LIGHTER};
             }}
             QTableWidget::item {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.FG};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
             }}
             QTableWidget::item:selected {{
-                background-color: {GruvboxColors.BLUE};
-                color: {GruvboxColors.BG_DARK};
+                background-color: {get_colors().BLUE};
+                color: {get_colors().BUTTON_TEXT};
             }}
         """)
         
@@ -909,16 +985,16 @@ class ViewEmployeesWindow(QDialog):
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         layout.addWidget(close_btn, alignment=Qt.AlignCenter)
@@ -937,7 +1013,7 @@ class AddEmployeeWindow(QDialog):
         # Título
         title = QLabel("AGREGAR NUEVO EMPLEADO")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # Formulario
@@ -973,16 +1049,16 @@ class AddEmployeeWindow(QDialog):
         add_btn.clicked.connect(self.add_employee)
         add_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 25px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(add_btn)
@@ -991,16 +1067,16 @@ class AddEmployeeWindow(QDialog):
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 25px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(cancel_btn)
@@ -1105,7 +1181,7 @@ class ModifyEmployeeWindow(QDialog):
         # Título
         title = QLabel("MODIFICAR EMPLEADO")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # ID del empleado
@@ -1120,15 +1196,15 @@ class ModifyEmployeeWindow(QDialog):
         search_btn.clicked.connect(self.load_employee)
         search_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 8px 15px;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         id_layout.addWidget(search_btn)
@@ -1171,16 +1247,16 @@ class ModifyEmployeeWindow(QDialog):
         self.modify_btn.setEnabled(False)
         self.modify_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 25px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(self.modify_btn)
@@ -1189,16 +1265,16 @@ class ModifyEmployeeWindow(QDialog):
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 25px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(cancel_btn)
@@ -1325,7 +1401,7 @@ class DeleteEmployeeWindow(QDialog):
         # Título
         title = QLabel("ELIMINAR EMPLEADO")
         title.setAlignment(Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
         # ID
@@ -1343,16 +1419,16 @@ class DeleteEmployeeWindow(QDialog):
         delete_btn.clicked.connect(self.delete_employee)
         delete_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.RED};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.RED};
+                background-color: {get_colors().RED};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().RED};
                 border-radius: 6px;
                 padding: 10px 25px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.RED};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().RED};
             }}
         """)
         button_layout.addWidget(delete_btn)
@@ -1361,16 +1437,16 @@ class DeleteEmployeeWindow(QDialog):
         cancel_btn.clicked.connect(self.reject)
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {GruvboxColors.AQUA};
-                color: {GruvboxColors.BG_DARK};
-                border: 2px solid {GruvboxColors.AQUA};
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
                 padding: 10px 25px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {GruvboxColors.BG_LIGHT};
-                color: {GruvboxColors.AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
             }}
         """)
         button_layout.addWidget(cancel_btn)
@@ -1425,11 +1501,11 @@ class DeleteEmployeeWindow(QDialog):
 
 def main():
     app = QApplication(sys.argv)
-    GruvboxStyle.apply_style(app)
-    
-    window = NominaApp()
+    GruvboxStyle.apply_style(app, CURRENT_THEME)
+
+    window = NominaApp(app)
     window.show()
-    
+
     sys.exit(app.exec_())
 
 
