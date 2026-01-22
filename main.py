@@ -339,19 +339,15 @@ def calculate_hours_per_day(hours_df):
                 entrada_hour_final = horas_raw[0] if horas_raw else 7
                 salida_hour_final = horas_raw[1] if len(horas_raw) > 1 else 15
             
-            # Crear objetos datetime
-            date_obj = date.date() if isinstance(date, pd.Timestamp) else date
-            entrada = datetime.combine(date_obj, 
-                                      datetime.min.time().replace(hour=entrada_hour_final, minute=entrada_minute))
-            salida = datetime.combine(date_obj, 
-                                     datetime.min.time().replace(hour=salida_hour_final, minute=salida_minute))
-            
-            # Si la salida es antes que la entrada, asumir que es del día siguiente (turno nocturno)
-            if salida < entrada:
-                salida = salida + timedelta(days=1)
-            
-            # Calcular horas trabajadas
-            horas_trabajadas = (salida - entrada).total_seconds() / 3600
+            # APLICAR MARGEN DE ERROR DE 10 MINUTOS PARA LA ENTRADA
+            # Si la entrada está entre 6:50 y 7:10, se cuenta como 7:00
+            if entrada_hour_final == 6 and entrada_minute >= 50:
+                # Llegó entre 6:50 y 6:59, se cuenta como 7:00
+                entrada_hour_final = 7
+                entrada_minute = 0
+            elif entrada_hour_final == 7 and entrada_minute <= 10:
+                # Llegó entre 7:00 y 7:10, se cuenta como 7:00
+                entrada_minute = 0
             
             # Calcular horas extra
             # - Días normales (lunes a viernes): después de las 3 PM / 15:00
@@ -368,20 +364,59 @@ def calculate_hours_per_day(hours_df):
             else:
                 hora_limite_extra = 15  # Días normales: después de las 3 PM
             
-            # Solo contar horas extra si la salida es DESPUÉS de la hora límite (no igual)
-            # Usar salida_hour_final que ya tiene la hora correcta en formato 24h
-            if salida_hour_final > hora_limite_extra:
-                # Si la salida es después de la hora límite, calcular horas extra
+            # APLICAR MARGEN DE ERROR DE 10 MINUTOS PARA LA SALIDA
+            # Si la salida está dentro del rango de 10 minutos después de la hora límite,
+            # se cuenta como si salió exactamente a la hora límite (sin horas extra)
+            salida_hour_ajustada = salida_hour_final
+            salida_minute_ajustada = salida_minute
+            
+            # Verificar si está dentro del margen de 10 minutos
+            if salida_hour_final == hora_limite_extra and salida_minute <= 10:
+                # Sale entre la hora límite y 10 minutos después: se cuenta como salida exacta a la hora límite
+                salida_hour_ajustada = hora_limite_extra
+                salida_minute_ajustada = 0
+                # No hay horas extra en este caso
+                horas_extra = 0.0
+            elif salida_hour_final > hora_limite_extra or (salida_hour_final == hora_limite_extra and salida_minute > 10):
+                # Sale después del margen de 10 minutos: SÍ hay horas extra
+                # Las horas extra se cuentan desde la hora límite exacta (no desde hora_limite + 10 min)
                 if entrada_hour_final < hora_limite_extra:
-                    # La entrada fue antes de la hora límite, calcular solo las horas después de la hora límite
+                    # La entrada fue antes de la hora límite
+                    # Calcular horas extra desde la hora límite exacta
                     horas_extra = salida_hour_final - hora_limite_extra
-                    # Si hay minutos en la salida, agregar la fracción correspondiente
+                    # Agregar los minutos de la salida (estos SÍ cuentan como horas extra)
                     if salida_minute > 0:
                         horas_extra += salida_minute / 60.0
+                elif entrada_hour_final == hora_limite_extra:
+                    # La entrada fue exactamente a la hora límite
+                    # Calcular horas extra desde la hora límite
+                    horas_extra = salida_hour_final - hora_limite_extra
+                    if salida_minute > entrada_minute:
+                        horas_extra += (salida_minute - entrada_minute) / 60.0
                 else:
                     # La entrada fue después de la hora límite, todas las horas son extra
-                    horas_extra = horas_trabajadas
-            # Si salida_hour_final == hora_limite_extra (exactamente a la hora límite), horas_extra = 0
+                    # Pero primero necesitamos calcular horas_trabajadas
+                    pass
+            
+            # Crear objetos datetime (usar horas ajustadas para el cálculo de horas trabajadas)
+            date_obj = date.date() if isinstance(date, pd.Timestamp) else date
+            entrada = datetime.combine(date_obj, 
+                                      datetime.min.time().replace(hour=entrada_hour_final, minute=entrada_minute))
+            # Para el cálculo de horas trabajadas, usar la salida ajustada si aplicó el margen
+            salida_para_calculo = datetime.combine(date_obj, 
+                                                   datetime.min.time().replace(hour=salida_hour_ajustada, minute=salida_minute_ajustada))
+            
+            # Si la salida es antes que la entrada, asumir que es del día siguiente (turno nocturno)
+            if salida_para_calculo < entrada:
+                salida_para_calculo = salida_para_calculo + timedelta(days=1)
+            
+            # Calcular horas trabajadas usando las horas ajustadas
+            horas_trabajadas = (salida_para_calculo - entrada).total_seconds() / 3600
+            
+            # Si la entrada fue después de la hora límite y hay horas extra, calcular correctamente
+            if entrada_hour_final > hora_limite_extra or (entrada_hour_final == hora_limite_extra and entrada_minute > 10):
+                # La entrada fue después de la hora límite, todas las horas son extra
+                horas_extra = horas_trabajadas
             
             # Validar que las horas sean razonables (entre 1 y 16 horas por día)
             if horas_trabajadas < 1 or horas_trabajadas > 16:
@@ -741,22 +776,40 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         print(f"Total bono horas extra: ${payroll_df['Bono Horas Extra'].sum():,.2f}")
     print(f"Total horas feriado/domingo: {payroll_df['Horas Feriado/Domingo'].sum():.2f}")
     print(f"Total pago feriado/domingo (50% adicional): ${payroll_df['Pago Feriado/Domingo (50% adicional)'].sum():,.2f}")
-    print(f"Total a pagar: ${payroll_df['Pago Quincenal'].sum():,.2f}")
-    print("="*80)
     
     # Agregar columna de fecha de pago al DataFrame
     payroll_df['Fecha de Pago'] = fecha_pago.strftime('%d/%m/%Y')
     
-    # Reordenar columnas para que la fecha de pago esté más visible
+    # Reordenar columnas: mover "Pago Quincenal" al final y renombrarlo a "Total Pago a Empleados"
+    if 'Pago Quincenal' in payroll_df.columns:
+        payroll_df = payroll_df.rename(columns={'Pago Quincenal': 'Total Pago a Empleados'})
+    
+    # Mostrar total a pagar usando el nuevo nombre de columna
+    if 'Total Pago a Empleados' in payroll_df.columns:
+        total_pagar = payroll_df['Total Pago a Empleados'].sum()
+    else:
+        total_pagar = payroll_df['Pago Quincenal'].sum() if 'Pago Quincenal' in payroll_df.columns else 0
+    
+    print(f"Total a pagar: ${total_pagar:,.2f}")
+    print("="*80)
+    
+    # Definir orden de columnas (sin "Total Pago a Empleados" que va al final)
     columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Salario Base', 
                 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
                 'Total Horas Trabajadas', 'Horas Extra (después 3 PM)', 
                 'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
-                'Pago Feriado/Domingo (50% adicional)', 'Pago Quincenal', 
+                'Pago Feriado/Domingo (50% adicional)', 
                 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
+    
     # Solo incluir columnas que existen en el DataFrame
-    columnas = [col for col in columnas if col in payroll_df.columns]
-    payroll_df = payroll_df[columnas]
+    columnas_existentes = [col for col in columnas if col in payroll_df.columns]
+    
+    # Agregar "Total Pago a Empleados" al final si existe
+    if 'Total Pago a Empleados' in payroll_df.columns:
+        columnas_existentes.append('Total Pago a Empleados')
+    
+    # Reordenar DataFrame
+    payroll_df = payroll_df[columnas_existentes]
     
     # Guardar en Excel
     print(f"\nGuardando nomina en: {output_file}")

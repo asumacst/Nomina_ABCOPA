@@ -108,6 +108,7 @@ class NominaApp:
         buttons = [
             ("Calcular Nómina Quincenal", self.open_calculate_payroll, COLOR_CYAN),
             ("Gestionar Empleados", self.open_manage_employees, COLOR_CELESTE),
+            ("Ver Nómina", self.view_payroll, COLOR_CELESTE),
             ("Ver Información", self.show_info, COLOR_GRAY_DARK),
             ("Salir", self.root.quit, COLOR_BLACK)
         ]
@@ -137,6 +138,175 @@ class NominaApp:
     def open_manage_employees(self):
         """Abre la ventana para gestionar empleados"""
         ManageEmployeesWindow(self.root)
+    
+    def view_payroll(self):
+        """Permite seleccionar y ver un archivo de nómina"""
+        # Abrir diálogo para seleccionar archivo
+        file_path = filedialog.askopenfilename(
+            title="Seleccionar archivo de nómina",
+            filetypes=[("Archivos Excel", "*.xlsx"), ("Todos los archivos", "*.*")],
+            initialdir=os.getcwd()
+        )
+        
+        if not file_path:
+            return  # Usuario canceló
+        
+        try:
+            # Leer el archivo de nómina
+            df = pd.read_excel(file_path)
+            
+            if df.empty:
+                messagebox.showinfo("Información", "El archivo de nómina está vacío.")
+                return
+            
+            # Reorganizar columnas: mover "Pago Quincenal" al final y renombrarlo
+            if 'Pago Quincenal' in df.columns:
+                # Guardar el valor antes de renombrar
+                df = df.rename(columns={'Pago Quincenal': 'Total Pago a Empleados'})
+                
+                # Obtener todas las columnas excepto "Total Pago a Empleados"
+                other_cols = [col for col in df.columns if col != 'Total Pago a Empleados']
+                # Reorganizar: otras columnas primero, luego "Total Pago a Empleados" al final
+                df = df[other_cols + ['Total Pago a Empleados']]
+            
+            # Calcular total general
+            if 'Total Pago a Empleados' in df.columns:
+                total_general = df['Total Pago a Empleados'].sum()
+            else:
+                # Si no existe la columna renombrada, buscar "Pago Quincenal"
+                if 'Pago Quincenal' in df.columns:
+                    total_general = df['Pago Quincenal'].sum()
+                else:
+                    total_general = 0
+            
+            # Crear ventana para mostrar nómina
+            view_window = tk.Toplevel(self.root)
+            view_window.title("Nómina Quincenal")
+            view_window.geometry("1200x600")
+            view_window.configure(bg=COLOR_BG_DARK)
+            
+            # Título
+            title = tk.Label(
+                view_window,
+                text="NÓMINA QUINCENAL",
+                font=('Arial', 16, 'bold'),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_CYAN
+            )
+            title.pack(pady=10)
+            
+            # Mostrar información del archivo
+            file_info = tk.Label(
+                view_window,
+                text=f"Archivo: {os.path.basename(file_path)}",
+                font=('Arial', 10),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_TEXT
+            )
+            file_info.pack(pady=5)
+            
+            # Frame con scrollbar para la tabla
+            table_frame = tk.Frame(view_window, bg=COLOR_BG_DARK)
+            table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            # Treeview con estilo oscuro
+            style = ttk.Style()
+            style.theme_use('clam')
+            style.configure("Treeview", background=COLOR_GRAY_DARK, foreground=COLOR_TEXT, 
+                          fieldbackground=COLOR_GRAY_DARK, borderwidth=0)
+            style.configure("Treeview.Heading", background=COLOR_BG_FRAME, foreground=COLOR_CYAN,
+                          borderwidth=1, relief=tk.SOLID)
+            style.map("Treeview", background=[('selected', COLOR_CYAN)])
+            
+            # Frame para treeview y scrollbar
+            tree_container = tk.Frame(table_frame, bg=COLOR_BG_DARK)
+            tree_container.pack(fill=tk.BOTH, expand=True)
+            
+            tree = ttk.Treeview(tree_container)
+            tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            # Scrollbar vertical
+            v_scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=tree.yview)
+            v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            tree.configure(yscrollcommand=v_scrollbar.set)
+            
+            # Scrollbar horizontal
+            h_scrollbar = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=tree.xview)
+            h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+            tree.configure(xscrollcommand=h_scrollbar.set)
+            
+            # Columnas
+            columns = list(df.columns)
+            tree['columns'] = columns
+            tree['show'] = 'headings'
+            
+            # Configurar columnas
+            for col in columns:
+                tree.heading(col, text=col)
+                # Ajustar ancho según el tipo de columna
+                if 'Total' in col or 'Pago' in col:
+                    tree.column(col, width=150, anchor=tk.E)  # Alineado a la derecha para números
+                elif col == 'ID':
+                    tree.column(col, width=100, anchor=tk.CENTER)
+                elif col == 'Nombre':
+                    tree.column(col, width=180, anchor=tk.W)
+                else:
+                    tree.column(col, width=120, anchor=tk.CENTER)
+            
+            # Insertar datos
+            for _, row in df.iterrows():
+                values = []
+                for col in columns:
+                    val = row[col]
+                    if pd.isna(val):
+                        values.append('')
+                    elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col):
+                        # Formatear números monetarios
+                        values.append(f"${val:,.2f}")
+                    else:
+                        values.append(str(val))
+                tree.insert('', tk.END, values=values)
+            
+            # Frame para el total general (resaltado)
+            total_frame = tk.Frame(view_window, bg=COLOR_BG_DARK, pady=15)
+            total_frame.pack(fill=tk.X, padx=10)
+            
+            # Etiqueta de total general con estilo resaltado
+            total_label = tk.Label(
+                total_frame,
+                text="TOTAL GENERAL A PAGAR:",
+                font=('Arial', 14, 'bold'),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_CYAN
+            )
+            total_label.pack(side=tk.LEFT, padx=10)
+            
+            # Valor del total con estilo muy resaltado
+            total_value = tk.Label(
+                total_frame,
+                text=f"${total_general:,.2f}",
+                font=('Arial', 18, 'bold'),
+                bg=COLOR_CYAN,
+                fg=COLOR_BLACK,
+                relief=tk.RAISED,
+                borderwidth=3,
+                padx=20,
+                pady=10
+            )
+            total_value.pack(side=tk.LEFT, padx=10)
+            
+            # Información adicional
+            info_label = tk.Label(
+                total_frame,
+                text=f"({len(df)} empleados)",
+                font=('Arial', 10),
+                bg=COLOR_BG_DARK,
+                fg=COLOR_TEXT
+            )
+            info_label.pack(side=tk.LEFT, padx=10)
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al leer el archivo de nómina:\n{str(e)}")
     
     def show_info(self):
         """Muestra información del sistema"""
