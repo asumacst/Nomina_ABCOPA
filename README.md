@@ -11,7 +11,7 @@ En caso de necesitar el archivo ejecutable, este se encuentra en la carpeta dist
 ## Requisitos
 
 * Python 3.x
-* tkinter (incluido con Python en la mayoría de instalaciones)
+* PyQt5 (interfaz gráfica moderna)
 
 * pandas
 * openpyxl
@@ -73,12 +73,13 @@ python gui.py
 
 ## Archivos Requeridos
 
-La aplicación requiere los siguientes archivos Excel:
+La aplicación requiere los siguientes archivos:
 
-1. **employees_information.xlsx**: Archivo con la información de los empleados
+1. **logo.png**: Logo de ABCOPA (opcional, se mostrará un placeholder si no existe)
+2. **employees_information.xlsx**: Archivo con la información de los empleados
 
    - Columnas requeridas: ID, nombre, cargo, salario, n_de_cuenta, banco, tipo_de_cuenta, fijo
-2. **hours_worked.xlsx**: Archivo con los registros de asistencia
+3. **Reporte de Asistencia.xlsx**: Archivo con los registros de asistencia
 
    - Columnas requeridas: ID, nombre, fecha, hora
    - Debe tener exactamente 2 registros por día por empleado (entrada y salida)
@@ -92,7 +93,9 @@ La aplicación requiere los siguientes archivos Excel:
 
 ## Características
 
-- ✅ Interfaz gráfica moderna y profesional
+- ✅ Interfaz gráfica moderna con PyQt5 y paleta de colores Gruvbox
+- ✅ Diseño simétrico y estéticamente agradable
+- ✅ Logo ABCOPA en la página principal
 - ✅ Validación de datos en tiempo real
 - ✅ Mensajes informativos claros
 - ✅ Manejo de errores robusto

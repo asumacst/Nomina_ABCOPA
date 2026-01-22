@@ -1,312 +1,309 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog, scrolledtext
+import sys
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+    QLabel, QFileDialog, QMessageBox, QTextEdit, QLineEdit, QTableWidget,
+    QTableWidgetItem, QHeaderView, QScrollArea, QGroupBox, QFrame, QDialog,
+    QDialogButtonBox, QFormLayout, QSizePolicy
+)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
+from PyQt5.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
 from datetime import datetime
 import pandas as pd
 import os
-import threading
 from main import (
-    calculate_payroll_quincenal, 
-    agregar_empleado, 
-    eliminar_empleado, 
+    calculate_payroll_quincenal,
+    agregar_empleado,
+    eliminar_empleado,
     modificar_empleado,
     leer_empleados_normalizado
 )
 
-# Paleta de colores: Negro, Cyan, Gris oscuro, Celeste
-COLOR_BG_DARK = '#1e1e1e'  # Fondo oscuro
-COLOR_BG_FRAME = '#2d2d2d'  # Gris oscuro para frames
-COLOR_TEXT = '#ffffff'  # Texto blanco
-COLOR_CYAN = '#00bcd4'  # Cyan
-COLOR_CELESTE = '#87ceeb'  # Celeste
-COLOR_BLACK = '#000000'  # Negro
-COLOR_GRAY_DARK = '#3d3d3d'  # Gris oscuro adicional
+# Paleta de colores Gruvbox (versión suave)
+class GruvboxColors:
+    # Backgrounds
+    BG_DARK = '#282828'      # bg0
+    BG_DARKER = '#1d2021'    # bg0_h
+    BG_LIGHT = '#3c3836'     # bg1
+    BG_LIGHTER = '#504945'   # bg2
+    
+    # Foregrounds
+    FG = '#ebdbb2'           # fg
+    FG_DARK = '#a89984'      # fg2
+    
+    # Accent colors (suaves)
+    BLUE = '#83a598'         # blue
+    AQUA = '#8ec07c'         # aqua
+    GREEN = '#b8bb26'        # green
+    YELLOW = '#fabd2f'       # yellow
+    ORANGE = '#fe8019'       # orange
+    RED = '#fb4934'          # red
+    PURPLE = '#d3869b'       # purple
+    
+    # Neutral
+    GRAY = '#928374'         # gray
 
 
-class NominaApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Sistema de Nómina ABCOPA")
-        self.root.geometry("900x700")
-        self.root.configure(bg=COLOR_BG_DARK)
+class GruvboxStyle:
+    @staticmethod
+    def apply_style(app):
+        """Aplica el estilo Gruvbox a la aplicación"""
+        style = f"""
+        QMainWindow {{
+            background-color: {GruvboxColors.BG_DARK};
+            color: {GruvboxColors.FG};
+        }}
+        QWidget {{
+            background-color: {GruvboxColors.BG_DARK};
+            color: {GruvboxColors.FG};
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }}
+        QPushButton {{
+            background-color: {GruvboxColors.BG_LIGHT};
+            color: {GruvboxColors.FG};
+            border: 2px solid {GruvboxColors.BG_LIGHTER};
+            border-radius: 6px;
+            padding: 10px 20px;
+            font-weight: bold;
+            font-size: 12pt;
+            min-height: 40px;
+        }}
+        QPushButton:hover {{
+            background-color: {GruvboxColors.BG_LIGHTER};
+            border-color: {GruvboxColors.BLUE};
+        }}
+        QPushButton:pressed {{
+            background-color: {GruvboxColors.BG_LIGHTER};
+            border-color: {GruvboxColors.AQUA};
+        }}
+        QPushButton:disabled {{
+            background-color: {GruvboxColors.BG_DARKER};
+            color: {GruvboxColors.GRAY};
+            border-color: {GruvboxColors.BG_DARKER};
+        }}
+        QLabel {{
+            color: {GruvboxColors.FG};
+            background-color: transparent;
+        }}
+        QLineEdit, QTextEdit {{
+            background-color: {GruvboxColors.BG_LIGHT};
+            color: {GruvboxColors.FG};
+            border: 2px solid {GruvboxColors.BG_LIGHTER};
+            border-radius: 4px;
+            padding: 6px;
+            font-size: 11pt;
+        }}
+        QLineEdit:focus, QTextEdit:focus {{
+            border-color: {GruvboxColors.BLUE};
+        }}
+        QGroupBox {{
+            border: 2px solid {GruvboxColors.BG_LIGHTER};
+            border-radius: 6px;
+            margin-top: 10px;
+            padding-top: 10px;
+            font-weight: bold;
+            color: {GruvboxColors.AQUA};
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 10px;
+            padding: 0 5px;
+        }}
+        QTableWidget {{
+            background-color: {GruvboxColors.BG_LIGHT};
+            color: {GruvboxColors.FG};
+            border: 1px solid {GruvboxColors.BG_LIGHTER};
+            gridline-color: {GruvboxColors.BG_LIGHTER};
+            selection-background-color: {GruvboxColors.BLUE};
+            selection-color: {GruvboxColors.BG_DARK};
+            alternate-background-color: {GruvboxColors.BG_LIGHT};
+        }}
+        QTableWidget::item {{
+            background-color: {GruvboxColors.BG_LIGHT};
+            color: {GruvboxColors.FG};
+        }}
+        QTableWidget::item:selected {{
+            background-color: {GruvboxColors.BLUE};
+            color: {GruvboxColors.BG_DARK};
+        }}
+        QHeaderView::section {{
+            background-color: {GruvboxColors.BG_LIGHTER};
+            color: {GruvboxColors.AQUA};
+            padding: 8px;
+            border: 1px solid {GruvboxColors.BG_LIGHTER};
+            font-weight: bold;
+        }}
+        QScrollArea {{
+            border: none;
+            background-color: {GruvboxColors.BG_DARK};
+        }}
+        QScrollBar:vertical {{
+            background-color: {GruvboxColors.BG_LIGHT};
+            width: 12px;
+            border: none;
+        }}
+        QScrollBar::handle:vertical {{
+            background-color: {GruvboxColors.BG_LIGHTER};
+            min-height: 20px;
+            border-radius: 6px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background-color: {GruvboxColors.BLUE};
+        }}
+        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+            height: 0px;
+        }}
+        QDialog {{
+            background-color: {GruvboxColors.BG_DARK};
+        }}
+        """
+        app.setStyleSheet(style)
+
+
+class NominaApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Sistema de Nómina ABCOPA")
+        self.setMinimumSize(1000, 700)
         
-        # Estilo
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure('TScrollbar', background=COLOR_BG_FRAME, troughcolor=COLOR_BG_DARK)
+        # Widget central
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
         
-        # Canvas con scrollbar para permitir desplazamiento
-        canvas = tk.Canvas(root, bg=COLOR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
+        # Layout principal
+        main_layout = QVBoxLayout(central_widget)
+        main_layout.setAlignment(Qt.AlignCenter)
+        main_layout.setSpacing(20)
+        main_layout.setContentsMargins(40, 30, 40, 30)
         
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        # Logo y título ABCOPA
+        logo_container = QVBoxLayout()
+        logo_container.setAlignment(Qt.AlignCenter)
+        logo_container.setSpacing(10)
         
-        # Centrar el contenido horizontalmente en el canvas
-        def center_content(event=None):
-            canvas.update_idletasks()
-            canvas_width = canvas.winfo_width()
-            frame_width = scrollable_frame.winfo_reqwidth()
-            if canvas_width > 1 and frame_width > 0:
-                x = (canvas_width - frame_width) // 2
-                canvas.coords(canvas.find_all()[0] if canvas.find_all() else None, max(0, x), 0)
+        # Logo
+        logo_label = QLabel()
+        logo_path = "logo.png"  # El usuario debe proporcionar este archivo
+        if os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path)
+            # Escalar manteniendo aspecto
+            scaled_pixmap = pixmap.scaled(300, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            logo_label.setPixmap(scaled_pixmap)
+        else:
+            # Placeholder si no existe el logo
+            logo_label.setText("Quintas del Este")
+            logo_label.setStyleSheet(f"font-size: 48pt; font-weight: bold; color: {GruvboxColors.AQUA};")
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_container.addWidget(logo_label)
         
-        canvas.bind("<Configure>", center_content)
-        scrollable_frame.bind("<Configure>", center_content)
+        # Título Quintas del Este
+        title_label = QLabel("Quintas del Este")
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet(f"font-size: 36pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        logo_container.addWidget(title_label)
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        main_layout.addLayout(logo_container)
         
-        # Habilitar scroll con rueda del mouse (Windows)
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        # Vincular scroll a la ventana cuando el mouse está sobre ella
-        def _bind_mousewheel(event):
-            self.root.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        def _unbind_mousewheel(event):
-            self.root.unbind_all("<MouseWheel>")
-        
-        self.root.bind("<Enter>", _bind_mousewheel)
-        self.root.bind("<Leave>", _unbind_mousewheel)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Frame principal centrado con ancho máximo
-        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
-        center_container.pack(expand=True, fill=tk.BOTH)
-        
-        self.main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=20, pady=15)
-        self.main_frame.pack(expand=True)
-        
-        # Título centrado
-        title_label = tk.Label(
-            self.main_frame,
-            text="SISTEMA DE NÓMINA ABCOPA",
-            font=('Arial', 20, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
-        )
-        title_label.pack(pady=(0, 15), anchor=tk.CENTER)
+        # Título Sistema de Nomina
+        subtitle_label = QLabel("Sistema de Nomina")
+        subtitle_label.setAlignment(Qt.AlignCenter)
+        subtitle_label.setStyleSheet(f"font-size: 28pt; font-weight: bold; color: {GruvboxColors.YELLOW}; margin: 20px;")
+        main_layout.addWidget(subtitle_label)
         
         # Botones principales
-        self.create_main_buttons()
-        
-    def create_main_buttons(self):
-        """Crea los botones principales del menú"""
-        # Contenedor para centrar los botones
-        button_container = tk.Frame(self.main_frame, bg=COLOR_BG_DARK)
-        button_container.pack(expand=True, fill=tk.X, pady=10)
-        
-        button_frame = tk.Frame(button_container, bg=COLOR_BG_DARK)
-        button_frame.pack(anchor=tk.CENTER)
+        button_layout = QVBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
+        button_layout.setSpacing(15)
         
         buttons = [
-            ("Calcular Nómina Quincenal", self.open_calculate_payroll, COLOR_CYAN),
-            ("Gestionar Empleados", self.open_manage_employees, COLOR_CELESTE),
-            ("Ver Nómina", self.view_payroll, COLOR_CELESTE),
-            ("Ver Información", self.show_info, COLOR_GRAY_DARK),
-            ("Salir", self.root.quit, COLOR_BLACK)
+            ("Calcular Nómina Quincenal", self.open_calculate_payroll),
+            ("Gestionar Empleados", self.open_manage_employees),
+            ("Ver Nómina", self.view_payroll),
+            ("Ver Información", self.show_info),
+            ("Salir", self.close)
         ]
         
-        for text, command, color in buttons:
-            btn = tk.Button(
-                button_frame,
-                text=text,
-                command=command,
-                font=('Arial', 12, 'bold'),
-                bg=color,
-                fg=COLOR_TEXT,
-                activebackground=color,
-                activeforeground=COLOR_TEXT,
-                width=28,
-                height=1,
-                relief=tk.RAISED,
-                borderwidth=2,
-                cursor='hand2'
-            )
-            btn.pack(pady=5)
+        for text, command in buttons:
+            btn = QPushButton(text)
+            btn.clicked.connect(command)
+            # Usar AQUA para todos excepto Salir (que usa RED)
+            color = GruvboxColors.RED if text == "Salir" else GruvboxColors.AQUA
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: {GruvboxColors.BG_DARK};
+                    border: 2px solid {color};
+                    border-radius: 8px;
+                    padding: 15px 30px;
+                    font-weight: bold;
+                    font-size: 14pt;
+                    min-width: 350px;
+                    min-height: 50px;
+                }}
+                QPushButton:hover {{
+                    background-color: {GruvboxColors.BG_LIGHT};
+                    color: {color};
+                    border-color: {color};
+                }}
+                QPushButton:pressed {{
+                    background-color: {GruvboxColors.BG_LIGHTER};
+                }}
+            """)
+            button_layout.addWidget(btn)
+        
+        main_layout.addLayout(button_layout)
+        
+        # Espaciador para centrar verticalmente
+        main_layout.addStretch()
     
     def open_calculate_payroll(self):
         """Abre la ventana para calcular nómina"""
-        CalculatePayrollWindow(self.root)
+        self.calc_window = CalculatePayrollWindow(self)
+        self.calc_window.show()
     
     def open_manage_employees(self):
         """Abre la ventana para gestionar empleados"""
-        ManageEmployeesWindow(self.root)
+        self.manage_window = ManageEmployeesWindow(self)
+        self.manage_window.show()
     
     def view_payroll(self):
         """Permite seleccionar y ver un archivo de nómina"""
-        # Abrir diálogo para seleccionar archivo
-        file_path = filedialog.askopenfilename(
-            title="Seleccionar archivo de nómina",
-            filetypes=[("Archivos Excel", "*.xlsx"), ("Todos los archivos", "*.*")],
-            initialdir=os.getcwd()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo de nómina",
+            os.getcwd(),
+            "Archivos Excel (*.xlsx);;Todos los archivos (*.*)"
         )
         
         if not file_path:
-            return  # Usuario canceló
+            return
         
         try:
-            # Leer el archivo de nómina
             df = pd.read_excel(file_path)
             
             if df.empty:
-                messagebox.showinfo("Información", "El archivo de nómina está vacío.")
+                QMessageBox.information(self, "Información", "El archivo de nómina está vacío.")
                 return
             
-            # Reorganizar columnas: mover "Pago Quincenal" al final y renombrarlo
+            # Reorganizar columnas
             if 'Pago Quincenal' in df.columns:
-                # Guardar el valor antes de renombrar
                 df = df.rename(columns={'Pago Quincenal': 'Total Pago a Empleados'})
-                
-                # Obtener todas las columnas excepto "Total Pago a Empleados"
                 other_cols = [col for col in df.columns if col != 'Total Pago a Empleados']
-                # Reorganizar: otras columnas primero, luego "Total Pago a Empleados" al final
                 df = df[other_cols + ['Total Pago a Empleados']]
             
             # Calcular total general
             if 'Total Pago a Empleados' in df.columns:
                 total_general = df['Total Pago a Empleados'].sum()
+            elif 'Pago Quincenal' in df.columns:
+                total_general = df['Pago Quincenal'].sum()
             else:
-                # Si no existe la columna renombrada, buscar "Pago Quincenal"
-                if 'Pago Quincenal' in df.columns:
-                    total_general = df['Pago Quincenal'].sum()
-                else:
-                    total_general = 0
+                total_general = 0
             
             # Crear ventana para mostrar nómina
-            view_window = tk.Toplevel(self.root)
-            view_window.title("Nómina Quincenal")
-            view_window.geometry("1200x600")
-            view_window.configure(bg=COLOR_BG_DARK)
-            
-            # Título
-            title = tk.Label(
-                view_window,
-                text="NÓMINA QUINCENAL",
-                font=('Arial', 16, 'bold'),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_CYAN
-            )
-            title.pack(pady=10)
-            
-            # Mostrar información del archivo
-            file_info = tk.Label(
-                view_window,
-                text=f"Archivo: {os.path.basename(file_path)}",
-                font=('Arial', 10),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_TEXT
-            )
-            file_info.pack(pady=5)
-            
-            # Frame con scrollbar para la tabla
-            table_frame = tk.Frame(view_window, bg=COLOR_BG_DARK)
-            table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            # Treeview con estilo oscuro
-            style = ttk.Style()
-            style.theme_use('clam')
-            style.configure("Treeview", background=COLOR_GRAY_DARK, foreground=COLOR_TEXT, 
-                          fieldbackground=COLOR_GRAY_DARK, borderwidth=0)
-            style.configure("Treeview.Heading", background=COLOR_BG_FRAME, foreground=COLOR_CYAN,
-                          borderwidth=1, relief=tk.SOLID)
-            style.map("Treeview", background=[('selected', COLOR_CYAN)])
-            
-            # Frame para treeview y scrollbar
-            tree_container = tk.Frame(table_frame, bg=COLOR_BG_DARK)
-            tree_container.pack(fill=tk.BOTH, expand=True)
-            
-            tree = ttk.Treeview(tree_container)
-            tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            # Scrollbar vertical
-            v_scrollbar = ttk.Scrollbar(tree_container, orient=tk.VERTICAL, command=tree.yview)
-            v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            tree.configure(yscrollcommand=v_scrollbar.set)
-            
-            # Scrollbar horizontal
-            h_scrollbar = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=tree.xview)
-            h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
-            tree.configure(xscrollcommand=h_scrollbar.set)
-            
-            # Columnas
-            columns = list(df.columns)
-            tree['columns'] = columns
-            tree['show'] = 'headings'
-            
-            # Configurar columnas
-            for col in columns:
-                tree.heading(col, text=col)
-                # Ajustar ancho según el tipo de columna
-                if 'Total' in col or 'Pago' in col:
-                    tree.column(col, width=150, anchor=tk.E)  # Alineado a la derecha para números
-                elif col == 'ID':
-                    tree.column(col, width=100, anchor=tk.CENTER)
-                elif col == 'Nombre':
-                    tree.column(col, width=180, anchor=tk.W)
-                else:
-                    tree.column(col, width=120, anchor=tk.CENTER)
-            
-            # Insertar datos
-            for _, row in df.iterrows():
-                values = []
-                for col in columns:
-                    val = row[col]
-                    if pd.isna(val):
-                        values.append('')
-                    elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col):
-                        # Formatear números monetarios
-                        values.append(f"${val:,.2f}")
-                    else:
-                        values.append(str(val))
-                tree.insert('', tk.END, values=values)
-            
-            # Frame para el total general (resaltado)
-            total_frame = tk.Frame(view_window, bg=COLOR_BG_DARK, pady=15)
-            total_frame.pack(fill=tk.X, padx=10)
-            
-            # Etiqueta de total general con estilo resaltado
-            total_label = tk.Label(
-                total_frame,
-                text="TOTAL GENERAL A PAGAR:",
-                font=('Arial', 14, 'bold'),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_CYAN
-            )
-            total_label.pack(side=tk.LEFT, padx=10)
-            
-            # Valor del total con estilo muy resaltado
-            total_value = tk.Label(
-                total_frame,
-                text=f"${total_general:,.2f}",
-                font=('Arial', 18, 'bold'),
-                bg=COLOR_CYAN,
-                fg=COLOR_BLACK,
-                relief=tk.RAISED,
-                borderwidth=3,
-                padx=20,
-                pady=10
-            )
-            total_value.pack(side=tk.LEFT, padx=10)
-            
-            # Información adicional
-            info_label = tk.Label(
-                total_frame,
-                text=f"({len(df)} empleados)",
-                font=('Arial', 10),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_TEXT
-            )
-            info_label.pack(side=tk.LEFT, padx=10)
-            
+            view_window = ViewPayrollWindow(self, df, total_general, os.path.basename(file_path))
+            view_window.show()
+        
         except Exception as e:
-            messagebox.showerror("Error", f"Error al leer el archivo de nómina:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al leer el archivo de nómina:\n{str(e)}")
     
     def show_info(self):
         """Muestra información del sistema"""
@@ -336,657 +333,618 @@ IMPORTANTE:
 • Se requiere exactamente 2 registros por día por empleado (entrada y salida)
 • Los empleados fijos no pueden ser ambos tipos a la vez
         """
-        messagebox.showinfo("Información del Sistema", info_text)
+        QMessageBox.information(self, "Información del Sistema", info_text)
 
 
-class CalculatePayrollWindow:
+class ViewPayrollWindow(QDialog):
+    def __init__(self, parent, df, total_general, filename):
+        super().__init__(parent)
+        self.setWindowTitle("Nómina Quincenal")
+        self.setMinimumSize(1200, 700)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Título
+        title = QLabel("NÓMINA QUINCENAL")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 24pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
+        
+        # Información del archivo
+        file_info = QLabel(f"Archivo: {filename}")
+        file_info.setAlignment(Qt.AlignCenter)
+        file_info.setStyleSheet(f"font-size: 12pt; color: {GruvboxColors.FG_DARK};")
+        layout.addWidget(file_info)
+        
+        # Tabla con scroll horizontal
+        table = QTableWidget()
+        table.setRowCount(len(df))
+        table.setColumnCount(len(df.columns))
+        table.setHorizontalHeaderLabels(df.columns)
+        
+        # Insertar datos
+        for i, row in df.iterrows():
+            for j, col in enumerate(df.columns):
+                val = row[col]
+                if pd.isna(val):
+                    item_text = ''
+                elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col):
+                    item_text = f"${val:,.2f}"
+                else:
+                    item_text = str(val)
+                
+                item = QTableWidgetItem(item_text)
+                item.setTextAlignment(Qt.AlignCenter)
+                if 'Total' in col or 'Pago' in col:
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(i, j, item)
+        
+        # Configurar columnas para permitir scroll horizontal
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        table.horizontalHeader().setMinimumSectionSize(100)
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(False)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # Asegurar fondo oscuro para todas las celdas
+        table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.FG};
+                gridline-color: {GruvboxColors.BG_LIGHTER};
+            }}
+            QTableWidget::item {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.FG};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {GruvboxColors.BLUE};
+                color: {GruvboxColors.BG_DARK};
+            }}
+        """)
+        
+        layout.addWidget(table)
+        
+        # Total general
+        total_frame = QFrame()
+        total_layout = QHBoxLayout(total_frame)
+        total_layout.setAlignment(Qt.AlignCenter)
+        
+        total_label = QLabel("TOTAL GENERAL A PAGAR:")
+        total_label.setStyleSheet(f"font-size: 16pt; font-weight: bold; color: {GruvboxColors.AQUA};")
+        total_layout.addWidget(total_label)
+        
+        total_value = QLabel(f"${total_general:,.2f}")
+        total_value.setStyleSheet(f"""
+            font-size: 20pt; font-weight: bold;
+            background-color: {GruvboxColors.YELLOW};
+            color: {GruvboxColors.BG_DARK};
+            padding: 15px 30px;
+            border-radius: 8px;
+        """)
+        total_layout.addWidget(total_value)
+        
+        info_label = QLabel(f"({len(df)} empleados)")
+        info_label.setStyleSheet(f"font-size: 12pt; color: {GruvboxColors.FG_DARK}; margin-left: 15px;")
+        total_layout.addWidget(info_label)
+        
+        layout.addWidget(total_frame)
+        
+        # Botón cerrar
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+
+
+class CalculatePayrollThread(QThread):
+    finished = pyqtSignal(object, str)
+    error = pyqtSignal(str)
+    
+    def __init__(self, employees_file, hours_file, quincena_fecha):
+        super().__init__()
+        self.employees_file = employees_file
+        self.hours_file = hours_file
+        self.quincena_fecha = quincena_fecha
+    
+    def run(self):
+        try:
+            import sys
+            from io import StringIO
+            
+            old_stdout = sys.stdout
+            sys.stdout = output = StringIO()
+            
+            result = calculate_payroll_quincenal(
+                employees_file=self.employees_file,
+                hours_file=self.hours_file,
+                output_file=None,
+                quincena_fecha=self.quincena_fecha
+            )
+            
+            sys.stdout = old_stdout
+            output_text = output.getvalue()
+            
+            self.finished.emit(result, output_text)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class CalculatePayrollWindow(QDialog):
     def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("Calcular Nómina Quincenal")
-        self.window.geometry("700x600")
-        self.window.configure(bg=COLOR_BG_DARK)
-        self.window.transient(parent)
-        self.window.grab_set()
+        super().__init__(parent)
+        self.setWindowTitle("Calcular Nómina Quincenal")
+        self.setMinimumSize(700, 650)
         
-        # Canvas con scrollbar para permitir desplazamiento
-        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
         
-        # Centrar el contenido horizontalmente en el canvas
-        def center_content(event=None):
-            canvas.update_idletasks()
-            canvas_width = canvas.winfo_width()
-            frame_width = scrollable_frame.winfo_reqwidth()
-            if canvas_width > 1 and frame_width > 0:
-                x = (canvas_width - frame_width) // 2
-                if canvas.find_all():
-                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
+        # Título
+        title = QLabel("CALCULAR NÓMINA QUINCENAL")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
         
-        def configure_scroll(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            center_content()
+        # Botones principales
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
         
-        scrollable_frame.bind("<Configure>", configure_scroll)
-        canvas.bind("<Configure>", center_content)
+        self.calculate_btn = QPushButton("Calcular Nómina")
+        self.calculate_btn.clicked.connect(self.calculate_payroll)
+        self.calculate_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+                min-width: 150px;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(self.calculate_btn)
         
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.continue_btn = QPushButton("Continuar")
+        self.continue_btn.clicked.connect(self.continue_operation)
+        self.continue_btn.setEnabled(False)
+        self.continue_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+                min-width: 150px;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(self.continue_btn)
         
-        # Habilitar scroll con rueda del mouse (Windows)
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+                min-width: 150px;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(close_btn)
         
-        # Vincular scroll a la ventana cuando el mouse está sobre ella
-        def _bind_mousewheel(event):
-            self.window.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        def _unbind_mousewheel(event):
-            self.window.unbind_all("<MouseWheel>")
-        
-        self.window.bind("<Enter>", _bind_mousewheel)
-        self.window.bind("<Leave>", _unbind_mousewheel)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Frame contenedor para centrar el contenido
-        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
-        center_container.pack(expand=True, fill=tk.BOTH)
-        
-        # Frame principal dentro del canvas
-        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=20, pady=15)
-        main_frame.pack(expand=True)
-        
-        # Título centrado
-        title = tk.Label(
-            main_frame,
-            text="CALCULAR NÓMINA QUINCENAL",
-            font=('Arial', 16, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
-        )
-        title.pack(pady=(0, 10), anchor=tk.CENTER)
-        
-        # Botones principales al inicio para mejor accesibilidad (centrados)
-        button_container = tk.Frame(main_frame, bg=COLOR_BG_DARK)
-        button_container.pack(expand=True, fill=tk.X, pady=10)
-        
-        button_frame_top = tk.Frame(button_container, bg=COLOR_BG_DARK)
-        button_frame_top.pack(anchor=tk.CENTER)
-        
-        self.calculate_btn = tk.Button(
-            button_frame_top,
-            text="Calcular Nómina",
-            command=self.calculate_payroll,
-            bg=COLOR_CYAN,
-            fg=COLOR_TEXT,
-            font=('Arial', 11, 'bold'),
-            width=18,
-            height=1,
-            cursor='hand2'
-        )
-        self.calculate_btn.pack(side=tk.LEFT, padx=5)
-        
-        self.continue_btn = tk.Button(
-            button_frame_top,
-            text="Continuar",
-            command=self.continue_operation,
-            bg=COLOR_CELESTE,
-            fg=COLOR_TEXT,
-            font=('Arial', 11, 'bold'),
-            width=15,
-            height=1,
-            cursor='hand2',
-            state='disabled'
-        )
-        self.continue_btn.pack(side=tk.LEFT, padx=5)
-        
-        tk.Button(
-            button_frame_top,
-            text="Cerrar",
-            command=self.window.destroy,
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 11),
-            width=15,
-            height=1,
-            cursor='hand2'
-        ).pack(side=tk.LEFT, padx=5)
+        layout.addLayout(button_layout)
         
         # Frame de archivos
-        files_frame = tk.LabelFrame(
-            main_frame,
-            text="Archivos",
-            font=('Arial', 11, 'bold'),
-            bg=COLOR_BG_FRAME,
-            fg=COLOR_CYAN,
-            padx=12,
-            pady=10
-        )
-        files_frame.pack(fill=tk.X, pady=5)
+        files_group = QGroupBox("Archivos")
+        files_layout = QVBoxLayout(files_group)
         
         # Archivo de empleados
-        tk.Label(
-            files_frame,
-            text="Archivo de Empleados:",
-            font=('Arial', 10),
-            bg=COLOR_BG_FRAME,
-            fg=COLOR_TEXT
-        ).pack(anchor=tk.W)
+        emp_layout = QHBoxLayout()
+        emp_label = QLabel("Archivo de Empleados:")
+        emp_layout.addWidget(emp_label)
         
-        emp_frame = tk.Frame(files_frame, bg=COLOR_BG_FRAME)
-        emp_frame.pack(fill=tk.X, pady=5)
+        self.emp_file_edit = QLineEdit("employees_information.xlsx")
+        emp_layout.addWidget(self.emp_file_edit)
         
-        self.emp_file_var = tk.StringVar(value="employees_information.xlsx")
-        emp_entry = tk.Entry(emp_frame, textvariable=self.emp_file_var, font=('Arial', 10), bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
-        emp_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        emp_browse_btn = QPushButton("Buscar")
+        emp_browse_btn.clicked.connect(lambda: self.browse_file(self.emp_file_edit))
+        emp_layout.addWidget(emp_browse_btn)
         
-        tk.Button(
-            emp_frame,
-            text="Buscar",
-            command=lambda: self.browse_file(self.emp_file_var),
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 9),
-            cursor='hand2'
-        ).pack(side=tk.LEFT, padx=(5, 0))
+        files_layout.addLayout(emp_layout)
         
         # Archivo de horas
-        tk.Label(
-            files_frame,
-            text="Archivo de Reporte de Asistencia:",
-            font=('Arial', 10),
-            bg=COLOR_BG_FRAME,
-            fg=COLOR_TEXT
-        ).pack(anchor=tk.W, pady=(10, 0))
+        hours_layout = QHBoxLayout()
+        hours_label = QLabel("Archivo de Reporte de Asistencia:")
+        hours_layout.addWidget(hours_label)
         
-        hours_frame = tk.Frame(files_frame, bg=COLOR_BG_FRAME)
-        hours_frame.pack(fill=tk.X, pady=5)
+        self.hours_file_edit = QLineEdit("Reporte de Asistencia.xlsx")
+        hours_layout.addWidget(self.hours_file_edit)
         
-        self.hours_file_var = tk.StringVar(value="Reporte de Asistencia.xlsx")
-        hours_entry = tk.Entry(hours_frame, textvariable=self.hours_file_var, font=('Arial', 10), bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
-        hours_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        hours_browse_btn = QPushButton("Buscar")
+        hours_browse_btn.clicked.connect(lambda: self.browse_file(self.hours_file_edit))
+        hours_layout.addWidget(hours_browse_btn)
         
-        tk.Button(
-            hours_frame,
-            text="Buscar",
-            command=lambda: self.browse_file(self.hours_file_var),
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 9),
-            cursor='hand2'
-        ).pack(side=tk.LEFT, padx=(5, 0))
+        files_layout.addLayout(hours_layout)
+        
+        layout.addWidget(files_group)
         
         # Frame de fecha
-        date_frame = tk.LabelFrame(
-            main_frame,
-            text="Fecha de Referencia (Opcional)",
-            font=('Arial', 11, 'bold'),
-            bg=COLOR_BG_FRAME,
-            fg=COLOR_CYAN,
-            padx=12,
-            pady=10
-        )
-        date_frame.pack(fill=tk.X, pady=5)
+        date_group = QGroupBox("Fecha de Referencia (Opcional)")
+        date_layout = QVBoxLayout(date_group)
         
-        tk.Label(
-            date_frame,
-            text="Deje vacío para usar la quincena más reciente",
-            font=('Arial', 9, 'italic'),
-            bg=COLOR_BG_FRAME,
-            fg=COLOR_CELESTE
-        ).pack(anchor=tk.W, pady=(0, 5))
+        date_hint = QLabel("Deje vacío para usar la quincena más reciente")
+        date_hint.setStyleSheet(f"color: {GruvboxColors.FG_DARK}; font-style: italic;")
+        date_layout.addWidget(date_hint)
         
-        self.date_var = tk.StringVar()
-        date_entry = tk.Entry(
-            date_frame,
-            textvariable=self.date_var,
-            font=('Arial', 10),
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            insertbackground=COLOR_TEXT
-        )
-        date_entry.pack(fill=tk.X, pady=5)
-        date_entry.insert(0, "DD/MM/YYYY (ejemplo: 15/01/2026)")
-        date_entry.config(fg=COLOR_CELESTE)
+        self.date_edit = QLineEdit()
+        self.date_edit.setPlaceholderText("DD/MM/YYYY (ejemplo: 15/01/2026)")
+        date_layout.addWidget(self.date_edit)
         
-        def on_date_entry_focus_in(event):
-            if date_entry.get() == "DD/MM/YYYY (ejemplo: 15/01/2026)":
-                date_entry.delete(0, tk.END)
-                date_entry.config(fg=COLOR_TEXT)
-        
-        def on_date_entry_focus_out(event):
-            if not date_entry.get():
-                date_entry.insert(0, "DD/MM/YYYY (ejemplo: 15/01/2026)")
-                date_entry.config(fg=COLOR_CELESTE)
-        
-        date_entry.bind('<FocusIn>', on_date_entry_focus_in)
-        date_entry.bind('<FocusOut>', on_date_entry_focus_out)
+        layout.addWidget(date_group)
         
         # Área de mensajes
-        msg_frame = tk.LabelFrame(
-            main_frame,
-            text="Mensajes",
-            font=('Arial', 11, 'bold'),
-            bg=COLOR_BG_FRAME,
-            fg=COLOR_CYAN,
-            padx=12,
-            pady=10
-        )
-        msg_frame.pack(fill=tk.BOTH, expand=True, pady=5)
+        msg_group = QGroupBox("Mensajes")
+        msg_layout = QVBoxLayout(msg_group)
         
-        self.message_text = scrolledtext.ScrolledText(
-            msg_frame,
-            height=8,
-            font=('Consolas', 9),
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            wrap=tk.WORD,
-            insertbackground=COLOR_TEXT
-        )
-        self.message_text.pack(fill=tk.BOTH, expand=True)
+        self.message_text = QTextEdit()
+        self.message_text.setReadOnly(True)
+        self.message_text.setFont(QFont("Consolas", 9))
+        msg_layout.addWidget(self.message_text)
         
-        # Indicador de estado (centrado)
-        status_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
-        status_frame.pack(pady=5)
+        layout.addWidget(msg_group)
         
-        self.status_label = tk.Label(
-            status_frame,
-            text="",
-            font=('Arial', 10, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
-        )
-        self.status_label.pack()
+        # Indicador de estado
+        self.status_label = QLabel("")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.AQUA};")
+        layout.addWidget(self.status_label)
+        
+        self.calc_thread = None
     
-    def browse_file(self, var):
+    def browse_file(self, line_edit):
         """Abre diálogo para buscar archivo"""
-        filename = filedialog.askopenfilename(
-            title="Seleccionar archivo",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")]
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo",
+            os.getcwd(),
+            "Excel files (*.xlsx *.xls);;All files (*.*)"
         )
         if filename:
-            var.set(filename)
+            line_edit.setText(filename)
     
     def continue_operation(self):
         """Permite continuar después de calcular la nómina"""
-        self.calculate_btn.config(state='normal')
-        self.continue_btn.config(state='disabled')
-        self.status_label.config(text="", fg=COLOR_CYAN)
+        self.calculate_btn.setEnabled(True)
+        self.continue_btn.setEnabled(False)
+        self.status_label.setText("")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.AQUA};")
     
     def calculate_payroll(self):
         """Calcula la nómina"""
-        # Validaciones previas
-        employees_file = self.emp_file_var.get().strip()
-        hours_file = self.hours_file_var.get().strip()
-        date_str = self.date_var.get().strip()
-        
-        # Limpiar placeholder si está presente
-        if date_str == "DD/MM/YYYY (ejemplo: 15/01/2026)":
-            date_str = ""
+        employees_file = self.emp_file_edit.text().strip()
+        hours_file = self.hours_file_edit.text().strip()
+        date_str = self.date_edit.text().strip()
         
         # Validar archivos
         if not employees_file:
-            messagebox.showerror("Error", "Debe especificar el archivo de empleados")
+            QMessageBox.critical(self, "Error", "Debe especificar el archivo de empleados")
             return
         
         if not hours_file:
-            messagebox.showerror("Error", "Debe especificar el archivo de reporte de asistencia")
+            QMessageBox.critical(self, "Error", "Debe especificar el archivo de reporte de asistencia")
             return
         
         if not os.path.exists(employees_file):
-            messagebox.showerror("Error", f"El archivo de empleados no existe: {employees_file}")
+            QMessageBox.critical(self, "Error", f"El archivo de empleados no existe: {employees_file}")
             return
         
         if not os.path.exists(hours_file):
-            messagebox.showerror("Error", f"El archivo de horas no existe: {hours_file}")
+            QMessageBox.critical(self, "Error", f"El archivo de horas no existe: {hours_file}")
             return
         
-        # Preparar fecha
+        # Validar fecha
         quincena_fecha = None
         if date_str:
             try:
-                # Validar formato de fecha
                 datetime.strptime(date_str, '%d/%m/%Y')
                 quincena_fecha = date_str
             except ValueError:
-                messagebox.showerror("Error", "Formato de fecha inválido. Use DD/MM/YYYY (ejemplo: 15/01/2026)")
+                QMessageBox.critical(self, "Error", "Formato de fecha inválido. Use DD/MM/YYYY (ejemplo: 15/01/2026)")
                 return
         
-        # Limpiar mensajes anteriores y preparar interfaz
-        self.message_text.delete(1.0, tk.END)
-        self.calculate_btn.config(state='disabled')
-        self.continue_btn.config(state='disabled')
-        self.status_label.config(text="⏳ Calculando nómina... Por favor espere.", fg=COLOR_CELESTE)
-        self.window.update()
+        # Limpiar mensajes
+        self.message_text.clear()
+        self.calculate_btn.setEnabled(False)
+        self.continue_btn.setEnabled(False)
+        self.status_label.setText("⏳ Calculando nómina... Por favor espere.")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.YELLOW};")
         
         # Mostrar mensaje de inicio
-        self.message_text.insert(tk.END, "Calculando nómina...\n")
-        self.message_text.insert(tk.END, f"Archivo de empleados: {employees_file}\n")
-        self.message_text.insert(tk.END, f"Archivo de reporte de asistencia: {hours_file}\n")
+        self.message_text.append("Calculando nómina...")
+        self.message_text.append(f"Archivo de empleados: {employees_file}")
+        self.message_text.append(f"Archivo de reporte de asistencia: {hours_file}")
         if quincena_fecha:
-            self.message_text.insert(tk.END, f"Fecha de referencia: {quincena_fecha}\n")
-        self.message_text.insert(tk.END, "-" * 60 + "\n\n")
-        self.window.update()
+            self.message_text.append(f"Fecha de referencia: {quincena_fecha}")
+        self.message_text.append("-" * 60)
         
-        # Ejecutar cálculo en un hilo separado para no bloquear la interfaz
-        def run_calculation():
-            try:
-                # Redirigir print a la caja de texto
-                import sys
-                from io import StringIO
-                
-                old_stdout = sys.stdout
-                sys.stdout = output = StringIO()
-                
-                result = calculate_payroll_quincenal(
-                    employees_file=employees_file,
-                    hours_file=hours_file,
-                    output_file=None,
-                    quincena_fecha=quincena_fecha
-                )
-                
-                sys.stdout = old_stdout
-                output_text = output.getvalue()
-                
-                # Actualizar interfaz en el hilo principal
-                self.window.after(0, self.update_result, result, output_text)
-            
-            except Exception as e:
-                # Actualizar interfaz con error en el hilo principal
-                self.window.after(0, self.show_error, str(e))
-        
-        # Iniciar cálculo en hilo separado
-        thread = threading.Thread(target=run_calculation, daemon=True)
-        thread.start()
+        # Ejecutar cálculo en hilo separado
+        self.calc_thread = CalculatePayrollThread(employees_file, hours_file, quincena_fecha)
+        self.calc_thread.finished.connect(self.update_result)
+        self.calc_thread.error.connect(self.show_error)
+        self.calc_thread.start()
     
     def update_result(self, result, output_text):
         """Actualiza la interfaz con el resultado del cálculo"""
-        # Mostrar salida
-        self.message_text.insert(tk.END, output_text)
-        self.message_text.see(tk.END)
+        self.message_text.append(output_text)
         
         if result is not None:
-            self.message_text.insert(tk.END, "\n" + "=" * 60 + "\n")
-            self.message_text.insert(tk.END, "✓ NÓMINA CALCULADA EXITOSAMENTE\n")
-            self.message_text.insert(tk.END, "=" * 60 + "\n")
-            self.status_label.config(text="✓ Nómina calculada exitosamente. Presione 'Continuar' para realizar otra operación.", fg=COLOR_CYAN)
-            self.calculate_btn.config(state='normal')
-            self.continue_btn.config(state='normal')  # Habilitar botón Continuar
-            messagebox.showinfo("Éxito", "La nómina ha sido calculada exitosamente.\n\nRevise el área de mensajes para ver los detalles.\n\nPresione 'Continuar' para realizar otra operación.")
+            self.message_text.append("\n" + "=" * 60)
+            self.message_text.append("✓ NÓMINA CALCULADA EXITOSAMENTE")
+            self.message_text.append("=" * 60)
+            self.status_label.setText("✓ Nómina calculada exitosamente. Presione 'Continuar' para realizar otra operación.")
+            self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.GREEN};")
+            self.calculate_btn.setEnabled(True)
+            self.continue_btn.setEnabled(True)
+            QMessageBox.information(
+                self,
+                "Éxito",
+                "La nómina ha sido calculada exitosamente.\n\nRevise el área de mensajes para ver los detalles.\n\nPresione 'Continuar' para realizar otra operación."
+            )
         else:
-            self.status_label.config(text="✗ Error al calcular la nómina. Revise los mensajes.", fg=COLOR_CELESTE)
-            self.calculate_btn.config(state='normal')
-            self.continue_btn.config(state='normal')  # Habilitar botón Continuar
-            messagebox.showerror("Error", "No se pudo calcular la nómina.\n\nRevise el área de mensajes para ver los errores.\n\nPresione 'Continuar' para intentar nuevamente.")
+            self.status_label.setText("✗ Error al calcular la nómina. Revise los mensajes.")
+            self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.RED};")
+            self.calculate_btn.setEnabled(True)
+            self.continue_btn.setEnabled(True)
+            QMessageBox.critical(
+                self,
+                "Error",
+                "No se pudo calcular la nómina.\n\nRevise el área de mensajes para ver los errores.\n\nPresione 'Continuar' para intentar nuevamente."
+            )
     
     def show_error(self, error_msg):
         """Muestra un error en la interfaz"""
-        self.message_text.insert(tk.END, f"\nERROR: {error_msg}\n")
-        self.status_label.config(text=f"✗ Error: {error_msg[:50]}...", fg=COLOR_CELESTE)
-        self.calculate_btn.config(state='normal')
-        self.continue_btn.config(state='normal')  # Habilitar botón Continuar
-        messagebox.showerror("Error", f"Error al calcular la nómina:\n{error_msg}\n\nPresione 'Continuar' para intentar nuevamente.")
-
-
-class ManageEmployeesWindow:
-    def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("Gestionar Empleados")
-        self.window.geometry("800x700")
-        self.window.configure(bg=COLOR_BG_DARK)
-        self.window.transient(parent)
-        self.window.grab_set()
-        
-        # Canvas con scrollbar para permitir desplazamiento
-        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
-        
-        # Centrar el contenido horizontalmente en el canvas
-        def center_content(event=None):
-            canvas.update_idletasks()
-            canvas_width = canvas.winfo_width()
-            frame_width = scrollable_frame.winfo_reqwidth()
-            if canvas_width > 1 and frame_width > 0:
-                x = (canvas_width - frame_width) // 2
-                if canvas.find_all():
-                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
-        
-        def configure_scroll(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            center_content()
-        
-        scrollable_frame.bind("<Configure>", configure_scroll)
-        canvas.bind("<Configure>", center_content)
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Habilitar scroll con rueda del mouse (Windows)
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        # Vincular scroll a la ventana cuando el mouse está sobre ella
-        def _bind_mousewheel(event):
-            self.window.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        def _unbind_mousewheel(event):
-            self.window.unbind_all("<MouseWheel>")
-        
-        self.window.bind("<Enter>", _bind_mousewheel)
-        self.window.bind("<Leave>", _unbind_mousewheel)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Frame contenedor para centrar el contenido
-        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
-        center_container.pack(expand=True, fill=tk.BOTH)
-        
-        # Frame principal
-        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=20, pady=15)
-        main_frame.pack(expand=True)
-        
-        # Título centrado
-        title = tk.Label(
-            main_frame,
-            text="GESTIONAR EMPLEADOS",
-            font=('Arial', 16, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
+        self.message_text.append(f"\nERROR: {error_msg}")
+        self.status_label.setText(f"✗ Error: {error_msg[:50]}...")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {GruvboxColors.RED};")
+        self.calculate_btn.setEnabled(True)
+        self.continue_btn.setEnabled(True)
+        QMessageBox.critical(
+            self,
+            "Error",
+            f"Error al calcular la nómina:\n{error_msg}\n\nPresione 'Continuar' para intentar nuevamente."
         )
-        title.pack(pady=(0, 10), anchor=tk.CENTER)
+
+
+class ManageEmployeesWindow(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Gestionar Empleados")
+        self.setMinimumSize(800, 600)
         
-        # Botones de acción centrados
-        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
-        button_frame.pack(pady=5, anchor=tk.CENTER)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
+        
+        # Título
+        title = QLabel("GESTIONAR EMPLEADOS")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 20pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
+        
+        # Botones de acción
+        button_layout = QVBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
+        button_layout.setSpacing(10)
         
         buttons = [
-            ("Ver Lista de Empleados", self.view_employees, COLOR_CYAN),
-            ("Agregar Empleado", self.add_employee, COLOR_CELESTE),
-            ("Modificar Empleado", self.modify_employee, COLOR_GRAY_DARK),
-            ("Eliminar Empleado", self.delete_employee, COLOR_BLACK)
+            ("Ver Lista de Empleados", self.view_employees),
+            ("Agregar Empleado", self.add_employee),
+            ("Modificar Empleado", self.modify_employee),
+            ("Eliminar Empleado", self.delete_employee)
         ]
         
-        for text, command, color in buttons:
-            btn = tk.Button(
-                button_frame,
-                text=text,
-                command=command,
-                font=('Arial', 10, 'bold'),
-                bg=color,
-                fg=COLOR_TEXT,
-                width=23,
-                height=1,
-                cursor='hand2',
-                relief=tk.RAISED,
-                borderwidth=2,
-                activebackground=color,
-                activeforeground=COLOR_TEXT
-            )
-            btn.pack(pady=3)
+        for text, command in buttons:
+            btn = QPushButton(text)
+            btn.clicked.connect(command)
+            # Usar AQUA para todos excepto eliminar (que usa RED)
+            color = GruvboxColors.RED if "Eliminar" in text else GruvboxColors.AQUA
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {color};
+                    color: {GruvboxColors.BG_DARK};
+                    border: 2px solid {color};
+                    border-radius: 6px;
+                    padding: 12px 25px;
+                    font-size: 12pt;
+                    min-width: 250px;
+                }}
+                QPushButton:hover {{
+                    background-color: {GruvboxColors.BG_LIGHT};
+                    color: {color};
+                }}
+            """)
+            button_layout.addWidget(btn)
         
-        # Botón cerrar centrado
-        tk.Button(
-            main_frame,
-            text="Cerrar",
-            command=self.window.destroy,
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 10),
-            width=15,
-            height=1,
-            cursor='hand2',
-            activebackground=COLOR_GRAY_DARK,
-            activeforeground=COLOR_TEXT
-        ).pack(pady=10, anchor=tk.CENTER)
+        layout.addLayout(button_layout)
+        
+        # Botón cerrar
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.FG};
+                border: 2px solid {GruvboxColors.BG_LIGHTER};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHTER};
+                border-color: {GruvboxColors.BLUE};
+            }}
+        """)
+        layout.addWidget(close_btn, alignment=Qt.AlignCenter)
     
     def view_employees(self):
         """Muestra la lista de empleados"""
         try:
             df = leer_empleados_normalizado()
             if df is None or df.empty:
-                messagebox.showinfo("Información", "No hay empleados registrados.")
+                QMessageBox.information(self, "Información", "No hay empleados registrados.")
                 return
             
-            # Crear ventana para mostrar empleados
-            view_window = tk.Toplevel(self.window)
-            view_window.title("Lista de Empleados")
-            view_window.geometry("900x500")
-            view_window.configure(bg=COLOR_BG_DARK)
-            
-            # Título centrado
-            title = tk.Label(
-                view_window,
-                text="LISTA DE EMPLEADOS",
-                font=('Arial', 14, 'bold'),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_CYAN
-            )
-            title.pack(pady=10)
-            
-            # Frame con scrollbar
-            frame = tk.Frame(view_window, bg=COLOR_BG_DARK)
-            frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-            
-            # Treeview con estilo oscuro
-            style = ttk.Style()
-            style.theme_use('clam')
-            style.configure("Treeview", background=COLOR_GRAY_DARK, foreground=COLOR_TEXT, 
-                          fieldbackground=COLOR_GRAY_DARK, borderwidth=0)
-            style.configure("Treeview.Heading", background=COLOR_BG_FRAME, foreground=COLOR_CYAN,
-                          borderwidth=1, relief=tk.SOLID)
-            style.map("Treeview", background=[('selected', COLOR_CYAN)])
-            
-            tree = ttk.Treeview(frame)
-            tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-            
-            # Scrollbar
-            scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=tree.yview)
-            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-            tree.configure(yscrollcommand=scrollbar.set)
-            
-            # Columnas
-            columns = list(df.columns)
-            tree['columns'] = columns
-            tree['show'] = 'headings'
-            
-            for col in columns:
-                tree.heading(col, text=col.replace('_', ' ').title())
-                tree.column(col, width=120, anchor=tk.CENTER)
-            
-            # Datos
-            for _, row in df.iterrows():
-                values = [str(row[col]) if pd.notna(row[col]) else '' for col in columns]
-                tree.insert('', tk.END, values=values)
-            
+            view_window = ViewEmployeesWindow(self, df)
+            view_window.show()
+        
         except Exception as e:
-            messagebox.showerror("Error", f"Error al leer empleados:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al leer empleados:\n{str(e)}")
     
     def add_employee(self):
         """Abre ventana para agregar empleado"""
-        AddEmployeeWindow(self.window)
+        add_window = AddEmployeeWindow(self)
+        add_window.exec_()
     
     def modify_employee(self):
         """Abre ventana para modificar empleado"""
-        ModifyEmployeeWindow(self.window)
+        modify_window = ModifyEmployeeWindow(self)
+        modify_window.exec_()
     
     def delete_employee(self):
         """Elimina un empleado"""
-        DeleteEmployeeWindow(self.window)
+        delete_window = DeleteEmployeeWindow(self)
+        delete_window.exec_()
 
 
-class AddEmployeeWindow:
+class ViewEmployeesWindow(QDialog):
+    def __init__(self, parent, df):
+        super().__init__(parent)
+        self.setWindowTitle("Lista de Empleados")
+        self.setMinimumSize(900, 500)
+        
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        
+        # Título
+        title = QLabel("LISTA DE EMPLEADOS")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
+        
+        # Tabla
+        table = QTableWidget()
+        table.setRowCount(len(df))
+        table.setColumnCount(len(df.columns))
+        table.setHorizontalHeaderLabels([col.replace('_', ' ').title() for col in df.columns])
+        
+        # Insertar datos
+        for i, row in df.iterrows():
+            for j, col in enumerate(df.columns):
+                val = row[col]
+                item_text = str(val) if pd.notna(val) else ''
+                item = QTableWidgetItem(item_text)
+                item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(i, j, item)
+        
+        # Configurar columnas para permitir scroll horizontal
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        table.horizontalHeader().setMinimumSectionSize(100)
+        table.verticalHeader().setVisible(False)
+        table.setAlternatingRowColors(False)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        # Asegurar fondo oscuro para todas las celdas
+        table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.FG};
+                gridline-color: {GruvboxColors.BG_LIGHTER};
+            }}
+            QTableWidget::item {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.FG};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {GruvboxColors.BLUE};
+                color: {GruvboxColors.BG_DARK};
+            }}
+        """)
+        
+        layout.addWidget(table)
+        
+        # Botón cerrar
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+
+
+class AddEmployeeWindow(QDialog):
     def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("Agregar Empleado")
-        self.window.geometry("500x550")
-        self.window.configure(bg=COLOR_BG_DARK)
-        self.window.transient(parent)
-        self.window.grab_set()
+        super().__init__(parent)
+        self.setWindowTitle("Agregar Empleado")
+        self.setMinimumSize(500, 600)
         
-        # Canvas con scrollbar para permitir desplazamiento
-        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
         
-        # Centrar el contenido horizontalmente en el canvas
-        def center_content(event=None):
-            canvas.update_idletasks()
-            canvas_width = canvas.winfo_width()
-            frame_width = scrollable_frame.winfo_reqwidth()
-            if canvas_width > 1 and frame_width > 0:
-                x = (canvas_width - frame_width) // 2
-                if canvas.find_all():
-                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
+        # Título
+        title = QLabel("AGREGAR NUEVO EMPLEADO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
         
-        def configure_scroll(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            center_content()
+        # Formulario
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
         
-        scrollable_frame.bind("<Configure>", configure_scroll)
-        canvas.bind("<Configure>", center_content)
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Habilitar scroll con rueda del mouse (Windows)
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        # Vincular scroll a la ventana cuando el mouse está sobre ella
-        def _bind_mousewheel(event):
-            self.window.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        def _unbind_mousewheel(event):
-            self.window.unbind_all("<MouseWheel>")
-        
-        self.window.bind("<Enter>", _bind_mousewheel)
-        self.window.bind("<Leave>", _unbind_mousewheel)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Frame contenedor para centrar el contenido
-        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
-        center_container.pack(expand=True, fill=tk.BOTH)
-        
-        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=25, pady=15)
-        main_frame.pack(expand=True)
-        
-        # Título centrado
-        title = tk.Label(
-            main_frame,
-            text="AGREGAR NUEVO EMPLEADO",
-            font=('Arial', 14, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
-        )
-        title.pack(pady=(0, 10), anchor=tk.CENTER)
-        
-        # Campos
+        self.vars = {}
         fields = [
             ("ID (deje vacío para auto-generar):", "id"),
             ("Nombre:", "nombre"),
@@ -995,100 +953,99 @@ class AddEmployeeWindow:
             ("Número de Cuenta:", "n_de_cuenta"),
             ("Banco:", "banco"),
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
-            ("Salario Fijo (S/N) - Cobra lo mismo sin importar horas:", "salario_fijo"),
-            ("Empleado Fijo (S/N) - Tiene sueldo mínimo + bono:", "empleado_fijo"),
-            ("Salario Mínimo (mensual, solo si es Empleado Fijo):", "salario_minimo")
+            ("Salario Fijo (S/N):", "salario_fijo"),
+            ("Empleado Fijo (S/N):", "empleado_fijo"),
+            ("Salario Mínimo (mensual):", "salario_minimo")
         ]
         
-        self.vars = {}
-        
         for label_text, field_name in fields:
-            tk.Label(
-                main_frame,
-                text=label_text,
-                font=('Arial', 9),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_TEXT
-            ).pack(anchor=tk.W, pady=(5, 2))
-            
-            var = tk.StringVar()
-            self.vars[field_name] = var
-            
-            entry = tk.Entry(main_frame, textvariable=var, font=('Arial', 9), width=40, 
-                           bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
-            entry.pack(fill=tk.X, pady=(0, 3))
+            line_edit = QLineEdit()
+            self.vars[field_name] = line_edit
+            form_layout.addRow(label_text, line_edit)
         
-        # Botones centrados
-        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
-        button_frame.pack(pady=10, anchor=tk.CENTER)
+        layout.addLayout(form_layout)
         
-        tk.Button(
-            button_frame,
-            text="Agregar",
-            command=self.add_employee,
-            bg=COLOR_CYAN,
-            fg=COLOR_TEXT,
-            font=('Arial', 11, 'bold'),
-            width=15,
-            cursor='hand2',
-            activebackground=COLOR_CYAN,
-            activeforeground=COLOR_TEXT
-        ).pack(side=tk.LEFT, padx=5)
+        # Botones
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
         
-        tk.Button(
-            button_frame,
-            text="Cancelar",
-            command=self.window.destroy,
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 11),
-            width=15,
-            cursor='hand2',
-            activebackground=COLOR_GRAY_DARK,
-            activeforeground=COLOR_TEXT
-        ).pack(side=tk.LEFT, padx=5)
+        add_btn = QPushButton("Agregar")
+        add_btn.clicked.connect(self.add_employee)
+        add_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(add_btn)
+        
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
     
     def add_employee(self):
         """Agrega el empleado"""
-        # Simular input() usando los valores de los campos
         import sys
         from io import StringIO
         import builtins
         
-        # Guardar inputs originales
         original_input = builtins.input
         
         inputs = []
-        id_val = self.vars['id'].get().strip()
-        inputs.append(id_val if id_val else '')  # ID
-        inputs.append(self.vars['nombre'].get().strip())  # Nombre
-        inputs.append(self.vars['cargo'].get().strip())  # Cargo
-        inputs.append(self.vars['salario'].get().strip())  # Salario
-        inputs.append(self.vars['n_de_cuenta'].get().strip())  # Número de cuenta
-        inputs.append(self.vars['banco'].get().strip())  # Banco
-        inputs.append(self.vars['tipo_de_cuenta'].get().strip())  # Tipo de cuenta
-        salario_fijo_val = self.vars['salario_fijo'].get().strip().upper()
-        inputs.append('S' if salario_fijo_val == 'S' else 'N')  # Salario Fijo
-        empleado_fijo_val = self.vars['empleado_fijo'].get().strip().upper()
-        inputs.append('S' if empleado_fijo_val == 'S' else 'N')  # Empleado Fijo
-        # Validar que no sean ambos
+        id_val = self.vars['id'].text().strip()
+        inputs.append(id_val if id_val else '')
+        inputs.append(self.vars['nombre'].text().strip())
+        inputs.append(self.vars['cargo'].text().strip())
+        inputs.append(self.vars['salario'].text().strip())
+        inputs.append(self.vars['n_de_cuenta'].text().strip())
+        inputs.append(self.vars['banco'].text().strip())
+        inputs.append(self.vars['tipo_de_cuenta'].text().strip())
+        salario_fijo_val = self.vars['salario_fijo'].text().strip().upper()
+        inputs.append('S' if salario_fijo_val == 'S' else 'N')
+        empleado_fijo_val = self.vars['empleado_fijo'].text().strip().upper()
+        inputs.append('S' if empleado_fijo_val == 'S' else 'N')
+        
         if salario_fijo_val == 'S' and empleado_fijo_val == 'S':
-            messagebox.showerror("Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+            QMessageBox.critical(self, "Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
             return
-        # Si es empleado_fijo, validar salario_minimo
+        
         if empleado_fijo_val == 'S':
-            salario_minimo_val = self.vars['salario_minimo'].get().strip()
+            salario_minimo_val = self.vars['salario_minimo'].text().strip()
             if not salario_minimo_val:
-                messagebox.showerror("Error", "El salario mínimo es obligatorio para empleados fijos")
+                QMessageBox.critical(self, "Error", "El salario mínimo es obligatorio para empleados fijos")
                 return
             try:
                 float(salario_minimo_val)
             except ValueError:
-                messagebox.showerror("Error", "El salario mínimo debe ser un número válido")
+                QMessageBox.critical(self, "Error", "El salario mínimo debe ser un número válido")
                 return
-            inputs.append(salario_minimo_val)  # Salario Mínimo
+            inputs.append(salario_minimo_val)
         else:
-            inputs.append('')  # Salario Mínimo vacío si no es empleado fijo
+            inputs.append('')
         
         input_index = [0]
         
@@ -1099,19 +1056,18 @@ class AddEmployeeWindow:
                 return result
             return ''
         
-        # Validar campos requeridos
-        if not self.vars['nombre'].get().strip():
-            messagebox.showerror("Error", "El nombre es obligatorio")
+        if not self.vars['nombre'].text().strip():
+            QMessageBox.critical(self, "Error", "El nombre es obligatorio")
             return
         
-        if not self.vars['salario'].get().strip():
-            messagebox.showerror("Error", "El salario es obligatorio")
+        if not self.vars['salario'].text().strip():
+            QMessageBox.critical(self, "Error", "El salario es obligatorio")
             return
         
         try:
-            float(self.vars['salario'].get().strip())
+            float(self.vars['salario'].text().strip())
         except ValueError:
-            messagebox.showerror("Error", "El salario debe ser un número válido")
+            QMessageBox.critical(self, "Error", "El salario debe ser un número válido")
             return
         
         try:
@@ -1125,112 +1081,66 @@ class AddEmployeeWindow:
             builtins.input = original_input
             
             if result is not None:
-                messagebox.showinfo("Éxito", "Empleado agregado exitosamente")
-                self.window.destroy()
+                QMessageBox.information(self, "Éxito", "Empleado agregado exitosamente")
+                self.accept()
             else:
-                messagebox.showerror("Error", "No se pudo agregar el empleado.\nVerifique los datos e intente nuevamente.")
+                QMessageBox.critical(self, "Error", "No se pudo agregar el empleado.\nVerifique los datos e intente nuevamente.")
         
         except Exception as e:
             builtins.input = original_input
             sys.stdout = old_stdout
-            messagebox.showerror("Error", f"Error al agregar empleado:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al agregar empleado:\n{str(e)}")
 
 
-class ModifyEmployeeWindow:
+class ModifyEmployeeWindow(QDialog):
     def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("Modificar Empleado")
-        self.window.geometry("500x600")
-        self.window.configure(bg=COLOR_BG_DARK)
-        self.window.transient(parent)
-        self.window.grab_set()
+        super().__init__(parent)
+        self.setWindowTitle("Modificar Empleado")
+        self.setMinimumSize(500, 650)
         
-        # Canvas con scrollbar para permitir desplazamiento
-        canvas = tk.Canvas(self.window, bg=COLOR_BG_DARK, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=canvas.yview)
-        scrollable_frame = tk.Frame(canvas, bg=COLOR_BG_DARK)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
         
-        # Centrar el contenido horizontalmente en el canvas
-        def center_content(event=None):
-            canvas.update_idletasks()
-            canvas_width = canvas.winfo_width()
-            frame_width = scrollable_frame.winfo_reqwidth()
-            if canvas_width > 1 and frame_width > 0:
-                x = (canvas_width - frame_width) // 2
-                if canvas.find_all():
-                    canvas.coords(canvas.find_all()[0], max(0, x), 0)
-        
-        def configure_scroll(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-            center_content()
-        
-        scrollable_frame.bind("<Configure>", configure_scroll)
-        canvas.bind("<Configure>", center_content)
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="n")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Habilitar scroll con rueda del mouse (Windows)
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        
-        # Vincular scroll a la ventana cuando el mouse está sobre ella
-        def _bind_mousewheel(event):
-            self.window.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        def _unbind_mousewheel(event):
-            self.window.unbind_all("<MouseWheel>")
-        
-        self.window.bind("<Enter>", _bind_mousewheel)
-        self.window.bind("<Leave>", _unbind_mousewheel)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Frame contenedor para centrar el contenido
-        center_container = tk.Frame(scrollable_frame, bg=COLOR_BG_DARK)
-        center_container.pack(expand=True, fill=tk.BOTH)
-        
-        main_frame = tk.Frame(center_container, bg=COLOR_BG_DARK, padx=25, pady=15)
-        main_frame.pack(expand=True)
-        
-        # Título centrado
-        title = tk.Label(
-            main_frame,
-            text="MODIFICAR EMPLEADO",
-            font=('Arial', 14, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
-        )
-        title.pack(pady=(0, 10), anchor=tk.CENTER)
+        # Título
+        title = QLabel("MODIFICAR EMPLEADO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
         
         # ID del empleado
-        tk.Label(
-            main_frame,
-            text="ID del Empleado:",
-            font=('Arial', 9, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_TEXT
-        ).pack(anchor=tk.W, pady=(5, 2))
+        id_layout = QHBoxLayout()
+        id_label = QLabel("ID del Empleado:")
+        id_layout.addWidget(id_label)
         
-        self.id_var = tk.StringVar()
-        id_entry = tk.Entry(main_frame, textvariable=self.id_var, font=('Arial', 9), width=40,
-                          bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
-        id_entry.pack(fill=tk.X, pady=(0, 5))
+        self.id_edit = QLineEdit()
+        id_layout.addWidget(self.id_edit)
         
-        tk.Button(
-            main_frame,
-            text="Buscar Empleado",
-            command=self.load_employee,
-            bg=COLOR_CYAN,
-            fg=COLOR_TEXT,
-            font=('Arial', 9),
-            cursor='hand2',
-            activebackground=COLOR_CYAN,
-            activeforeground=COLOR_TEXT
-        ).pack(pady=3, anchor=tk.CENTER)
+        search_btn = QPushButton("Buscar Empleado")
+        search_btn.clicked.connect(self.load_employee)
+        search_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 8px 15px;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        id_layout.addWidget(search_btn)
         
-        # Campos (inicialmente deshabilitados)
+        layout.addLayout(id_layout)
+        
+        # Formulario
+        form_layout = QFormLayout()
+        form_layout.setSpacing(10)
+        
+        self.vars = {}
+        self.entries = []
         fields = [
             ("Nombre:", "nombre"),
             ("Cargo:", "cargo"),
@@ -1243,74 +1153,71 @@ class ModifyEmployeeWindow:
             ("Salario Mínimo (mensual):", "salario_minimo")
         ]
         
-        self.vars = {}
-        self.entries = []
-        
         for label_text, field_name in fields:
-            tk.Label(
-                main_frame,
-                text=label_text,
-                font=('Arial', 9),
-                bg=COLOR_BG_DARK,
-                fg=COLOR_TEXT
-            ).pack(anchor=tk.W, pady=(5, 2))
-            
-            var = tk.StringVar()
-            self.vars[field_name] = var
-            
-            entry = tk.Entry(main_frame, textvariable=var, font=('Arial', 9), width=40, 
-                           state='disabled', bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, 
-                           insertbackground=COLOR_TEXT, disabledbackground=COLOR_BG_FRAME,
-                           disabledforeground=COLOR_CELESTE)
-            entry.pack(fill=tk.X, pady=(0, 3))
-            self.entries.append(entry)
+            line_edit = QLineEdit()
+            line_edit.setEnabled(False)
+            self.vars[field_name] = line_edit
+            self.entries.append(line_edit)
+            form_layout.addRow(label_text, line_edit)
         
-        # Botones centrados
-        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
-        button_frame.pack(pady=10, anchor=tk.CENTER)
+        layout.addLayout(form_layout)
         
-        self.modify_btn = tk.Button(
-            button_frame,
-            text="Modificar",
-            command=self.modify_employee,
-            bg=COLOR_CELESTE,
-            fg=COLOR_TEXT,
-            font=('Arial', 11, 'bold'),
-            width=15,
-            cursor='hand2',
-            state='disabled',
-            activebackground=COLOR_CELESTE,
-            activeforeground=COLOR_TEXT
-        )
-        self.modify_btn.pack(side=tk.LEFT, padx=5)
+        # Botones
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
         
-        tk.Button(
-            button_frame,
-            text="Cancelar",
-            command=self.window.destroy,
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 11),
-            width=15,
-            cursor='hand2',
-            activebackground=COLOR_GRAY_DARK,
-            activeforeground=COLOR_TEXT
-        ).pack(side=tk.LEFT, padx=5)
+        self.modify_btn = QPushButton("Modificar")
+        self.modify_btn.clicked.connect(self.modify_employee)
+        self.modify_btn.setEnabled(False)
+        self.modify_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(self.modify_btn)
+        
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
     
     def load_employee(self):
         """Carga los datos del empleado"""
-        employee_id = self.id_var.get().strip()
+        employee_id = self.id_edit.text().strip()
         if not employee_id:
-            messagebox.showerror("Error", "Debe ingresar un ID")
+            QMessageBox.critical(self, "Error", "Debe ingresar un ID")
             return
         
         try:
             df = leer_empleados_normalizado()
             if df is None or df.empty:
-                messagebox.showerror("Error", "No hay empleados en la base de datos")
+                QMessageBox.critical(self, "Error", "No hay empleados en la base de datos")
                 return
             
-            # Buscar empleado
             def normalize_id(id_val):
                 if pd.isna(id_val):
                     return None
@@ -1323,41 +1230,38 @@ class ModifyEmployeeWindow:
             employee = df[mask]
             
             if employee.empty:
-                messagebox.showerror("Error", f"No se encontró un empleado con ID: {employee_id}")
+                QMessageBox.critical(self, "Error", f"No se encontró un empleado con ID: {employee_id}")
                 return
             
             emp = employee.iloc[0]
             
-            # Llenar campos
-            self.vars['nombre'].set(str(emp['nombre']))
-            self.vars['cargo'].set(str(emp.get('cargo', '')))
-            self.vars['salario'].set(str(emp['salario']))
-            self.vars['n_de_cuenta'].set(str(emp.get('n_de_cuenta', '')))
-            self.vars['banco'].set(str(emp.get('banco', '')))
-            self.vars['tipo_de_cuenta'].set(str(emp.get('tipo_de_cuenta', '')))
+            self.vars['nombre'].setText(str(emp['nombre']))
+            self.vars['cargo'].setText(str(emp.get('cargo', '')))
+            self.vars['salario'].setText(str(emp['salario']))
+            self.vars['n_de_cuenta'].setText(str(emp.get('n_de_cuenta', '')))
+            self.vars['banco'].setText(str(emp.get('banco', '')))
+            self.vars['tipo_de_cuenta'].setText(str(emp.get('tipo_de_cuenta', '')))
             salario_fijo_val = bool(emp.get('salario_fijo', False))
             empleado_fijo_val = bool(emp.get('empleado_fijo', False))
             salario_minimo_val = emp.get('salario_minimo', 0) if pd.notna(emp.get('salario_minimo')) else 0
-            self.vars['salario_fijo'].set('S' if salario_fijo_val else 'N')
-            self.vars['empleado_fijo'].set('S' if empleado_fijo_val else 'N')
-            self.vars['salario_minimo'].set(str(salario_minimo_val))
+            self.vars['salario_fijo'].setText('S' if salario_fijo_val else 'N')
+            self.vars['empleado_fijo'].setText('S' if empleado_fijo_val else 'N')
+            self.vars['salario_minimo'].setText(str(salario_minimo_val))
             
-            # Habilitar campos
             for entry in self.entries:
-                entry.config(state='normal')
-            self.modify_btn.config(state='normal')
-            
+                entry.setEnabled(True)
+            self.modify_btn.setEnabled(True)
+        
         except Exception as e:
-            messagebox.showerror("Error", f"Error al cargar empleado:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al cargar empleado:\n{str(e)}")
     
     def modify_employee(self):
         """Modifica el empleado"""
-        employee_id = self.id_var.get().strip()
+        employee_id = self.id_edit.text().strip()
         if not employee_id:
-            messagebox.showerror("Error", "Debe ingresar un ID")
+            QMessageBox.critical(self, "Error", "Debe ingresar un ID")
             return
         
-        # Simular inputs
         import sys
         from io import StringIO
         import builtins
@@ -1365,16 +1269,16 @@ class ModifyEmployeeWindow:
         original_input = builtins.input
         
         inputs = [
-            employee_id,  # ID
-            self.vars['nombre'].get().strip() or '',  # Nombre (Enter para mantener)
-            self.vars['cargo'].get().strip() or '',  # Cargo
-            self.vars['salario'].get().strip() or '',  # Salario
-            self.vars['n_de_cuenta'].get().strip() or '',  # Número de cuenta
-            self.vars['banco'].get().strip() or '',  # Banco
-            self.vars['tipo_de_cuenta'].get().strip() or '',  # Tipo de cuenta
-            self.vars['salario_fijo'].get().strip().upper() or '',  # Salario Fijo
-            self.vars['empleado_fijo'].get().strip().upper() or '',  # Empleado Fijo
-            self.vars['salario_minimo'].get().strip() or ''  # Salario Mínimo
+            employee_id,
+            self.vars['nombre'].text().strip() or '',
+            self.vars['cargo'].text().strip() or '',
+            self.vars['salario'].text().strip() or '',
+            self.vars['n_de_cuenta'].text().strip() or '',
+            self.vars['banco'].text().strip() or '',
+            self.vars['tipo_de_cuenta'].text().strip() or '',
+            self.vars['salario_fijo'].text().strip().upper() or '',
+            self.vars['empleado_fijo'].text().strip().upper() or '',
+            self.vars['salario_minimo'].text().strip() or ''
         ]
         
         input_index = [0]
@@ -1397,97 +1301,96 @@ class ModifyEmployeeWindow:
             builtins.input = original_input
             
             if result is not None:
-                messagebox.showinfo("Éxito", "Empleado modificado exitosamente")
-                self.window.destroy()
+                QMessageBox.information(self, "Éxito", "Empleado modificado exitosamente")
+                self.accept()
             else:
-                messagebox.showerror("Error", "No se pudo modificar el empleado.\nVerifique los datos e intente nuevamente.")
+                QMessageBox.critical(self, "Error", "No se pudo modificar el empleado.\nVerifique los datos e intente nuevamente.")
         
         except Exception as e:
             builtins.input = original_input
             sys.stdout = old_stdout
-            messagebox.showerror("Error", f"Error al modificar empleado:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al modificar empleado:\n{str(e)}")
 
 
-class DeleteEmployeeWindow:
+class DeleteEmployeeWindow(QDialog):
     def __init__(self, parent):
-        self.window = tk.Toplevel(parent)
-        self.window.title("Eliminar Empleado")
-        self.window.geometry("400x200")
-        self.window.configure(bg=COLOR_BG_DARK)
-        self.window.transient(parent)
-        self.window.grab_set()
+        super().__init__(parent)
+        self.setWindowTitle("Eliminar Empleado")
+        self.setMinimumSize(400, 200)
         
-        main_frame = tk.Frame(self.window, bg=COLOR_BG_DARK, padx=30, pady=30)
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
         
-        # Título centrado
-        title = tk.Label(
-            main_frame,
-            text="ELIMINAR EMPLEADO",
-            font=('Arial', 16, 'bold'),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_CYAN
-        )
-        title.pack(pady=(0, 20), anchor=tk.CENTER)
+        # Título
+        title = QLabel("ELIMINAR EMPLEADO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {GruvboxColors.AQUA}; margin: 10px;")
+        layout.addWidget(title)
         
-        tk.Label(
-            main_frame,
-            text="ID del Empleado:",
-            font=('Arial', 10),
-            bg=COLOR_BG_DARK,
-            fg=COLOR_TEXT
-        ).pack(anchor=tk.W, pady=(10, 2))
+        # ID
+        id_label = QLabel("ID del Empleado:")
+        layout.addWidget(id_label)
         
-        self.id_var = tk.StringVar()
-        id_entry = tk.Entry(main_frame, textvariable=self.id_var, font=('Arial', 10), width=30,
-                          bg=COLOR_GRAY_DARK, fg=COLOR_TEXT, insertbackground=COLOR_TEXT)
-        id_entry.pack(fill=tk.X, pady=(0, 20))
+        self.id_edit = QLineEdit()
+        layout.addWidget(self.id_edit)
         
-        # Botones centrados
-        button_frame = tk.Frame(main_frame, bg=COLOR_BG_DARK)
-        button_frame.pack(anchor=tk.CENTER)
+        # Botones
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
         
-        tk.Button(
-            button_frame,
-            text="Eliminar",
-            command=self.delete_employee,
-            bg=COLOR_BLACK,
-            fg=COLOR_TEXT,
-            font=('Arial', 11, 'bold'),
-            width=15,
-            cursor='hand2',
-            activebackground=COLOR_BLACK,
-            activeforeground=COLOR_TEXT
-        ).pack(side=tk.LEFT, padx=5)
+        delete_btn = QPushButton("Eliminar")
+        delete_btn.clicked.connect(self.delete_employee)
+        delete_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.RED};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.RED};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.RED};
+            }}
+        """)
+        button_layout.addWidget(delete_btn)
         
-        tk.Button(
-            button_frame,
-            text="Cancelar",
-            command=self.window.destroy,
-            bg=COLOR_GRAY_DARK,
-            fg=COLOR_TEXT,
-            font=('Arial', 11),
-            width=15,
-            cursor='hand2',
-            activebackground=COLOR_GRAY_DARK,
-            activeforeground=COLOR_TEXT
-        ).pack(side=tk.LEFT, padx=5)
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {GruvboxColors.AQUA};
+                color: {GruvboxColors.BG_DARK};
+                border: 2px solid {GruvboxColors.AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {GruvboxColors.BG_LIGHT};
+                color: {GruvboxColors.AQUA};
+            }}
+        """)
+        button_layout.addWidget(cancel_btn)
+        
+        layout.addLayout(button_layout)
     
     def delete_employee(self):
         """Elimina el empleado"""
-        employee_id = self.id_var.get().strip()
+        employee_id = self.id_edit.text().strip()
         if not employee_id:
-            messagebox.showerror("Error", "Debe ingresar un ID")
+            QMessageBox.critical(self, "Error", "Debe ingresar un ID")
             return
         
-        # Simular inputs
         import sys
         from io import StringIO
         import builtins
         
         original_input = builtins.input
         
-        inputs = [employee_id, 'S']  # ID y confirmación
+        inputs = [employee_id, 'S']
         
         input_index = [0]
         
@@ -1509,21 +1412,25 @@ class DeleteEmployeeWindow:
             builtins.input = original_input
             
             if result is not None:
-                messagebox.showinfo("Éxito", "Empleado eliminado exitosamente")
-                self.window.destroy()
+                QMessageBox.information(self, "Éxito", "Empleado eliminado exitosamente")
+                self.accept()
             else:
-                messagebox.showerror("Error", "No se pudo eliminar el empleado.\nVerifique el ID e intente nuevamente.")
+                QMessageBox.critical(self, "Error", "No se pudo eliminar el empleado.\nVerifique el ID e intente nuevamente.")
         
         except Exception as e:
             builtins.input = original_input
             sys.stdout = old_stdout
-            messagebox.showerror("Error", f"Error al eliminar empleado:\n{str(e)}")
+            QMessageBox.critical(self, "Error", f"Error al eliminar empleado:\n{str(e)}")
 
 
 def main():
-    root = tk.Tk()
-    app = NominaApp(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    GruvboxStyle.apply_style(app)
+    
+    window = NominaApp()
+    window.show()
+    
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

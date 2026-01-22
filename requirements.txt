@@ -16,3 +16,4 @@ pytz==2025.2
 six==1.17.0
 tzdata==2025.3
 zope.interface==8.2
+PyQt5==5.15.10
