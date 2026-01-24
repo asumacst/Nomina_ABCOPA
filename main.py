@@ -563,9 +563,35 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     
     print(f"[OK] Encontrados datos para {len(daily_hours_df)} días en esta quincena")
     
+    def get_column_value(row, candidates, default=None):
+        """Obtiene el primer valor disponible de una lista de columnas."""
+        for col in candidates:
+            if col in row and pd.notna(row[col]):
+                return row[col]
+        return default
+
+    def parse_bool(value):
+        """Normaliza valores de contrato a booleano."""
+        if pd.isna(value):
+            return False
+        if isinstance(value, (int, float, np.integer)):
+            return value != 0
+        text = str(value).strip().lower()
+        return text in ['s', 'si', 'sí', 'y', 'yes', 'true', '1']
+
     # Crear diccionario de empleados para acceso rápido
     employees_dict = {}
     for _, emp in employees_df.iterrows():
+        contrato_val = get_column_value(
+            emp,
+            ['Empleado por contrato', 'empleado_por_contrato', 'empleado por contrato'],
+            default=False
+        )
+        isl_val = get_column_value(emp, ['ISL', 'isl', 'Impuesto sobre la renta'], default=0)
+        try:
+            isl_val = float(isl_val) if pd.notna(isl_val) else 0.0
+        except (TypeError, ValueError):
+            isl_val = 0.0
         # Usar ID como clave principal, pero también nombre como alternativa
         employees_dict[str(emp['ID'])] = {
             'nombre': emp['nombre'],
@@ -576,7 +602,9 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'cargo': emp.get('cargo', ''),
             'n_de_cuenta': emp.get('n_de_cuenta', ''),
             'banco': emp.get('banco', ''),
-            'tipo_de_cuenta': emp.get('tipo_de_cuenta', '')
+            'tipo_de_cuenta': emp.get('tipo_de_cuenta', ''),
+            'empleado_por_contrato': parse_bool(contrato_val),
+            'isl': isl_val
         }
     
     # Calcular nómina por quincena (solo una quincena ahora)
@@ -702,6 +730,16 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             pago_quincenal = pago_normal + pago_extra + pago_feriado_domingo
             tipo_pago = "Por horas"
         
+        # Calcular descuentos por contrato
+        seguro_social = 0.0
+        seguro_educativo = 0.0
+        descuento_isl = 0.0
+        if emp_info['empleado_por_contrato']:
+            seguro_social = pago_quincenal * 0.03
+            seguro_educativo = pago_quincenal * 0.05
+            descuento_isl = emp_info['isl']
+        total_descuentos = seguro_social + seguro_educativo + descuento_isl
+
         # Preparar datos para el resultado
         resultado = {
             'ID': employee_id,
@@ -710,6 +748,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Tipo': tipo_pago,
             'Salario Fijo': 'Sí' if emp_info['salario_fijo'] else 'No',
             'Empleado Fijo': 'Sí' if emp_info['empleado_fijo'] else 'No',
+            'Empleado por contrato': 'Sí' if emp_info['empleado_por_contrato'] else 'No',
             'Salario Base': emp_info['salario'],
             'Quincena Inicio': quincena_inicio.strftime('%d/%m/%Y'),
             'Quincena Fin': quincena_fin.strftime('%d/%m/%Y'),
@@ -717,6 +756,10 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Horas Extra (después 3 PM)': round(total_horas_extra, 2),
             'Pago Extra (25% adicional)': round(pago_extra, 2),
             'Pago Quincenal': round(pago_quincenal, 2),
+            'Seguro Social (3%)': round(seguro_social, 2),
+            'Seguro Educativo (5%)': round(seguro_educativo, 2),
+            'ISL': round(descuento_isl, 2),
+            'Total Descuentos': round(total_descuentos, 2),
             'Número de Cuenta': emp_info['n_de_cuenta'],
             'Banco': emp_info['banco'],
             'Tipo de Cuenta': emp_info['tipo_de_cuenta']
@@ -780,9 +823,11 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     # Agregar columna de fecha de pago al DataFrame
     payroll_df['Fecha de Pago'] = fecha_pago.strftime('%d/%m/%Y')
     
-    # Reordenar columnas: mover "Pago Quincenal" al final y renombrarlo a "Total Pago a Empleados"
+    # Reordenar columnas: renombrar pago quincenal a total neto
     if 'Pago Quincenal' in payroll_df.columns:
         payroll_df = payroll_df.rename(columns={'Pago Quincenal': 'Total Pago a Empleados'})
+        if 'Total Descuentos' in payroll_df.columns:
+            payroll_df['Total Pago a Empleados'] = payroll_df['Total Pago a Empleados'] - payroll_df['Total Descuentos']
     
     # Mostrar total a pagar usando el nuevo nombre de columna
     if 'Total Pago a Empleados' in payroll_df.columns:
@@ -794,11 +839,13 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     print("="*80)
     
     # Definir orden de columnas (sin "Total Pago a Empleados" que va al final)
-    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Salario Base', 
+    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Empleado por contrato',
+                'Salario Base', 
                 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
                 'Total Horas Trabajadas', 'Horas Extra (después 3 PM)', 
                 'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
                 'Pago Feriado/Domingo (50% adicional)', 
+                'Seguro Social (3%)', 'Seguro Educativo (5%)', 'ISL', 'Total Descuentos',
                 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
     
     # Solo incluir columnas que existen en el DataFrame
@@ -943,6 +990,8 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     tipo_de_cuenta = input('Tipo de cuenta: ').strip()
     salario_fijo = input('Salario Fijo (S/N) - Cobra lo mismo sin importar horas: ').strip().upper()
     empleado_fijo = input('Empleado Fijo (S/N) - Tiene sueldo mínimo + bono por horas extra: ').strip().upper()
+    empleado_contrato = input('Empleado por contrato (S/N): ').strip().upper()
+    isl_str = input('ISL (Impuesto sobre la renta): ').strip()
     
     # Validar y convertir salario
     try:
@@ -956,6 +1005,19 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     
     # Convertir empleado_fijo a booleano
     empleado_fijo_bool = (empleado_fijo == 'S')
+
+    # Convertir empleado_por_contrato a booleano
+    empleado_contrato_bool = (empleado_contrato == 'S')
+
+    # Validar y convertir ISL
+    if empleado_contrato_bool:
+        try:
+            isl = float(isl_str) if isl_str else 0.0
+        except ValueError:
+            print("[ERROR] El ISL debe ser un número válido")
+            return None
+    else:
+        isl = 0.0
     
     # Validar que no sean ambos tipos a la vez
     if salario_fijo_bool and empleado_fijo_bool:
@@ -995,7 +1057,9 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
         'tipo_de_cuenta': [tipo_de_cuenta],
         'salario_fijo': [1 if salario_fijo_bool else 0],
         'empleado_fijo': [1 if empleado_fijo_bool else 0],
-        'salario_minimo': [salario_minimo if empleado_fijo_bool else 0]
+        'salario_minimo': [salario_minimo if empleado_fijo_bool else 0],
+        'Empleado por contrato': ['Sí' if empleado_contrato_bool else 'No'],
+        'ISL': [isl]
     })
     
     # Concatenar con el DataFrame existente
@@ -1146,8 +1210,12 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     salario_fijo_actual = bool(empleado_actual.get('salario_fijo', False))
     empleado_fijo_actual = bool(empleado_actual.get('empleado_fijo', False))
     salario_minimo_actual = empleado_actual.get('salario_minimo', 0) if pd.notna(empleado_actual.get('salario_minimo')) else 0
+    empleado_contrato_actual = str(empleado_actual.get('Empleado por contrato', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
+    isl_actual = empleado_actual.get('ISL', 0) if pd.notna(empleado_actual.get('ISL')) else 0
     print(f"  Salario Fijo: {'Sí' if salario_fijo_actual else 'No'}")
     print(f"  Empleado Fijo: {'Sí' if empleado_fijo_actual else 'No'}")
+    print(f"  Empleado por contrato: {'Sí' if empleado_contrato_actual else 'No'}")
+    print(f"  ISL: {isl_actual}")
     if empleado_fijo_actual:
         print(f"  Salario Mínimo: {salario_minimo_actual}")
     
@@ -1196,6 +1264,22 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     else:
         empleado_fijo_bool = (empleado_fijo_str == 'S')
     
+    empleado_contrato_str = input(f'Empleado por contrato (S/N) [{"S" if empleado_contrato_actual else "N"}]: ').strip().upper()
+    if not empleado_contrato_str:
+        empleado_contrato_bool = empleado_contrato_actual
+    else:
+        empleado_contrato_bool = (empleado_contrato_str == 'S')
+
+    isl_str = input(f'ISL (Impuesto sobre la renta) [{isl_actual}]: ').strip()
+    if isl_str:
+        try:
+            isl = float(isl_str)
+        except ValueError:
+            print("[ERROR] El ISL debe ser un número válido. Se mantendrá el valor actual.")
+            isl = isl_actual
+    else:
+        isl = isl_actual
+
     # Validar que no sean ambos tipos a la vez
     if salario_fijo_bool and empleado_fijo_bool:
         print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
@@ -1227,6 +1311,8 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     employees_df.loc[indice, 'salario_fijo'] = 1 if salario_fijo_bool else 0
     employees_df.loc[indice, 'empleado_fijo'] = 1 if empleado_fijo_bool else 0
     employees_df.loc[indice, 'salario_minimo'] = salario_minimo if empleado_fijo_bool else 0
+    employees_df.loc[indice, 'Empleado por contrato'] = 'Sí' if empleado_contrato_bool else 'No'
+    employees_df.loc[indice, 'ISL'] = isl if empleado_contrato_bool else 0
     
     # Guardar en Excel
     try:

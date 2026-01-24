@@ -163,7 +163,7 @@ class GruvboxStyle:
         }}
         QHeaderView::section {{
             background-color: {C.BG_LIGHTER};
-            color: {C.AQUA};
+            color: {C.FG if theme == 'aqua' else C.AQUA};
             padding: 8px;
             border: 1px solid {C.BG_LIGHTER};
             font-weight: bold;
@@ -315,11 +315,11 @@ class NominaApp(QMainWindow):
                     color: {C.BUTTON_TEXT};
                     border: 2px solid {color};
                     border-radius: 8px;
-                    padding: 15px 30px;
+                    padding: 10px 20px;
                     font-weight: bold;
-                    font-size: 14pt;
-                    min-width: 350px;
-                    min-height: 50px;
+                    font-size: 11pt;
+                    min-width: 250px;
+                    min-height: 40px;
                 }}
                 QPushButton:hover {{
                     background-color: {C.BG_LIGHT};
@@ -417,6 +417,7 @@ class ViewPayrollWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Nómina Quincenal")
         self.setMinimumSize(1200, 700)
+        self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -446,7 +447,7 @@ class ViewPayrollWindow(QDialog):
                 val = row[col]
                 if pd.isna(val):
                     item_text = ''
-                elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col):
+                elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col or 'Seguro' in col or 'ISL' in col or 'Descuento' in col):
                     item_text = f"${val:,.2f}"
                 else:
                     item_text = str(val)
@@ -508,7 +509,29 @@ class ViewPayrollWindow(QDialog):
         
         layout.addWidget(total_frame)
         
-        # Botón cerrar
+        # Botones de acción
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
+        button_layout.setSpacing(10)
+        
+        fullscreen_btn = QPushButton("Pantalla Completa")
+        fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        button_layout.addWidget(fullscreen_btn)
+        
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
@@ -525,7 +548,18 @@ class ViewPayrollWindow(QDialog):
                 color: {get_colors().AQUA};
             }}
         """)
-        layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def toggle_fullscreen(self):
+        """Alterna entre pantalla completa y modo ventana"""
+        if self._is_fullscreen:
+            self.showNormal()
+            self._is_fullscreen = False
+        else:
+            self.showFullScreen()
+            self._is_fullscreen = True
 
 
 class CalculatePayrollThread(QThread):
@@ -566,6 +600,7 @@ class CalculatePayrollWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Calcular Nómina Quincenal")
         self.setMinimumSize(700, 650)
+        self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -619,6 +654,25 @@ class CalculatePayrollWindow(QDialog):
             }}
         """)
         button_layout.addWidget(self.continue_btn)
+        
+        fullscreen_btn = QPushButton("Pantalla Completa")
+        fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+                min-width: 150px;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        button_layout.addWidget(fullscreen_btn)
         
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(self.close)
@@ -707,6 +761,15 @@ class CalculatePayrollWindow(QDialog):
         layout.addWidget(self.status_label)
         
         self.calc_thread = None
+    
+    def toggle_fullscreen(self):
+        """Alterna entre pantalla completa y modo ventana"""
+        if self._is_fullscreen:
+            self.showNormal()
+            self._is_fullscreen = False
+        else:
+            self.showFullScreen()
+            self._is_fullscreen = True
     
     def browse_file(self, line_edit):
         """Abre diálogo para buscar archivo"""
@@ -827,6 +890,7 @@ class ManageEmployeesWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Gestionar Empleados")
         self.setMinimumSize(800, 600)
+        self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -874,7 +938,29 @@ class ManageEmployeesWindow(QDialog):
         
         layout.addLayout(button_layout)
         
-        # Botón cerrar
+        # Botones de acción
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
+        button_layout.setSpacing(10)
+        
+        fullscreen_btn = QPushButton("Pantalla Completa")
+        fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        button_layout.addWidget(fullscreen_btn)
+        
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
@@ -891,7 +977,18 @@ class ManageEmployeesWindow(QDialog):
                 border-color: {get_colors().BLUE};
             }}
         """)
-        layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def toggle_fullscreen(self):
+        """Alterna entre pantalla completa y modo ventana"""
+        if self._is_fullscreen:
+            self.showNormal()
+            self._is_fullscreen = False
+        else:
+            self.showFullScreen()
+            self._is_fullscreen = True
     
     def view_employees(self):
         """Muestra la lista de empleados"""
@@ -928,6 +1025,7 @@ class ViewEmployeesWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Lista de Empleados")
         self.setMinimumSize(900, 500)
+        self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -980,7 +1078,29 @@ class ViewEmployeesWindow(QDialog):
         
         layout.addWidget(table)
         
-        # Botón cerrar
+        # Botones de acción
+        button_layout = QHBoxLayout()
+        button_layout.setAlignment(Qt.AlignCenter)
+        button_layout.setSpacing(10)
+        
+        fullscreen_btn = QPushButton("Pantalla Completa")
+        fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        button_layout.addWidget(fullscreen_btn)
+        
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
@@ -997,7 +1117,18 @@ class ViewEmployeesWindow(QDialog):
                 color: {get_colors().AQUA};
             }}
         """)
-        layout.addWidget(close_btn, alignment=Qt.AlignCenter)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+    
+    def toggle_fullscreen(self):
+        """Alterna entre pantalla completa y modo ventana"""
+        if self._is_fullscreen:
+            self.showNormal()
+            self._is_fullscreen = False
+        else:
+            self.showFullScreen()
+            self._is_fullscreen = True
 
 
 class AddEmployeeWindow(QDialog):
@@ -1031,7 +1162,9 @@ class AddEmployeeWindow(QDialog):
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
             ("Salario Fijo (S/N):", "salario_fijo"),
             ("Empleado Fijo (S/N):", "empleado_fijo"),
-            ("Salario Mínimo (mensual):", "salario_minimo")
+            ("Salario Mínimo (mensual):", "salario_minimo"),
+            ("Empleado por contrato (S/N):", "empleado_por_contrato"),
+            ("ISL (Impuesto sobre la renta):", "isl")
         ]
         
         for label_text, field_name in fields:
@@ -1104,6 +1237,10 @@ class AddEmployeeWindow(QDialog):
         inputs.append('S' if salario_fijo_val == 'S' else 'N')
         empleado_fijo_val = self.vars['empleado_fijo'].text().strip().upper()
         inputs.append('S' if empleado_fijo_val == 'S' else 'N')
+        empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
+        inputs.append('S' if empleado_contrato_val == 'S' else 'N')
+        isl_val = self.vars['isl'].text().strip()
+        inputs.append(isl_val if isl_val else '')
         
         if salario_fijo_val == 'S' and empleado_fijo_val == 'S':
             QMessageBox.critical(self, "Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
@@ -1122,6 +1259,16 @@ class AddEmployeeWindow(QDialog):
             inputs.append(salario_minimo_val)
         else:
             inputs.append('')
+
+        if empleado_contrato_val == 'S':
+            if not isl_val:
+                QMessageBox.critical(self, "Error", "El ISL es obligatorio para empleados por contrato")
+                return
+            try:
+                float(isl_val)
+            except ValueError:
+                QMessageBox.critical(self, "Error", "El ISL debe ser un número válido")
+                return
         
         input_index = [0]
         
@@ -1226,7 +1373,9 @@ class ModifyEmployeeWindow(QDialog):
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
             ("Salario Fijo (S/N):", "salario_fijo"),
             ("Empleado Fijo (S/N):", "empleado_fijo"),
-            ("Salario Mínimo (mensual):", "salario_minimo")
+            ("Salario Mínimo (mensual):", "salario_minimo"),
+            ("Empleado por contrato (S/N):", "empleado_por_contrato"),
+            ("ISL (Impuesto sobre la renta):", "isl")
         ]
         
         for label_text, field_name in fields:
@@ -1320,9 +1469,13 @@ class ModifyEmployeeWindow(QDialog):
             salario_fijo_val = bool(emp.get('salario_fijo', False))
             empleado_fijo_val = bool(emp.get('empleado_fijo', False))
             salario_minimo_val = emp.get('salario_minimo', 0) if pd.notna(emp.get('salario_minimo')) else 0
+            empleado_contrato_val = emp.get('Empleado por contrato', 'No')
+            isl_val = emp.get('ISL', 0) if pd.notna(emp.get('ISL')) else 0
             self.vars['salario_fijo'].setText('S' if salario_fijo_val else 'N')
             self.vars['empleado_fijo'].setText('S' if empleado_fijo_val else 'N')
             self.vars['salario_minimo'].setText(str(salario_minimo_val))
+            self.vars['empleado_por_contrato'].setText('S' if str(empleado_contrato_val).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1'] else 'N')
+            self.vars['isl'].setText(str(isl_val))
             
             for entry in self.entries:
                 entry.setEnabled(True)
@@ -1337,6 +1490,18 @@ class ModifyEmployeeWindow(QDialog):
         if not employee_id:
             QMessageBox.critical(self, "Error", "Debe ingresar un ID")
             return
+
+        empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
+        isl_val = self.vars['isl'].text().strip()
+        if empleado_contrato_val == 'S':
+            if not isl_val:
+                QMessageBox.critical(self, "Error", "El ISL es obligatorio para empleados por contrato")
+                return
+            try:
+                float(isl_val)
+            except ValueError:
+                QMessageBox.critical(self, "Error", "El ISL debe ser un número válido")
+                return
         
         import sys
         from io import StringIO
@@ -1354,6 +1519,8 @@ class ModifyEmployeeWindow(QDialog):
             self.vars['tipo_de_cuenta'].text().strip() or '',
             self.vars['salario_fijo'].text().strip().upper() or '',
             self.vars['empleado_fijo'].text().strip().upper() or '',
+            self.vars['empleado_por_contrato'].text().strip().upper() or '',
+            self.vars['isl'].text().strip() or '',
             self.vars['salario_minimo'].text().strip() or ''
         ]
         
