@@ -3,9 +3,9 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QTextEdit, QLineEdit, QTableWidget,
     QTableWidgetItem, QHeaderView, QScrollArea, QGroupBox, QFrame, QDialog,
-    QDialogButtonBox, QFormLayout, QSizePolicy, QRadioButton
+    QDialogButtonBox, QFormLayout, QSizePolicy, QRadioButton, QComboBox, QDateEdit
 )
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QDate
 from PyQt5.QtGui import QFont, QPixmap, QPalette, QColor, QIcon
 from datetime import datetime
 import pandas as pd
@@ -15,7 +15,14 @@ from main import (
     agregar_empleado,
     eliminar_empleado,
     modificar_empleado,
-    leer_empleados_normalizado
+    leer_empleados_normalizado,
+    ensure_prestamos_file,
+    obtener_prestamos,
+    crear_prestamo,
+    actualizar_estado_prestamo,
+    cerrar_prestamo,
+    obtener_pagos_prestamo,
+    registrar_pago_manual_prestamo,
 )
 
 # Paleta de colores Gruvbox (versión suave)
@@ -78,6 +85,32 @@ def get_colors():
     return GruvboxColors if CURRENT_THEME == 'gruvbox' else AquaColors
 
 
+def adjust_window_to_screen(window, width_ratio=0.85, height_ratio=0.85, min_width_ratio=0.55, min_height_ratio=0.55):
+    """
+    Ajusta el tamaño de una ventana a la pantalla disponible, evitando tamaños fijos
+    que puedan verse mal en resoluciones pequeñas o grandes.
+    """
+    try:
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        geo = screen.availableGeometry()
+        w = max(400, int(geo.width() * width_ratio))
+        h = max(300, int(geo.height() * height_ratio))
+        window.resize(w, h)
+        window.setMinimumSize(
+            max(360, min(geo.width(), int(geo.width() * min_width_ratio))),
+            max(260, min(geo.height(), int(geo.height() * min_height_ratio))),
+        )
+        # Centrar
+        frame = window.frameGeometry()
+        frame.moveCenter(geo.center())
+        window.move(frame.topLeft())
+    except Exception:
+        # Si falla, no bloquear la UI
+        return
+
+
 class GruvboxStyle:
     @staticmethod
     def apply_style(app, theme='gruvbox'):
@@ -101,7 +134,6 @@ class GruvboxStyle:
             padding: 10px 20px;
             font-weight: bold;
             font-size: 12pt;
-            min-height: 40px;
         }}
         QPushButton:hover {{
             background-color: {C.BG_LIGHTER};
@@ -203,7 +235,7 @@ class NominaApp(QMainWindow):
         super().__init__()
         self.app = app
         self.setWindowTitle("Sistema de Nómina ABCOPA")
-        self.setMinimumSize(1000, 700)
+        adjust_window_to_screen(self, width_ratio=0.65, height_ratio=0.75, min_width_ratio=0.50, min_height_ratio=0.55)
         self._logo_has_image = False
         self._logo_path = "logo.png"
 
@@ -266,6 +298,7 @@ class NominaApp(QMainWindow):
         buttons = [
             ("Calcular Nómina Quincenal", self.open_calculate_payroll),
             ("Gestionar Empleados", self.open_manage_employees),
+            ("Gestionar Préstamos", self.open_manage_loans),
             ("Ver Nómina", self.view_payroll),
             ("Ver Información", self.show_info),
             ("Salir", self.close),
@@ -308,6 +341,7 @@ class NominaApp(QMainWindow):
             f"font-size: 28pt; font-weight: bold; color: {subtitle_color}; margin: 20px;"
         )
         for btn, is_exit in self.main_buttons:
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             color = C.RED if is_exit else C.AQUA
             btn.setStyleSheet(f"""
                 QPushButton {{
@@ -318,8 +352,6 @@ class NominaApp(QMainWindow):
                     padding: 10px 20px;
                     font-weight: bold;
                     font-size: 11pt;
-                    min-width: 250px;
-                    min-height: 40px;
                 }}
                 QPushButton:hover {{
                     background-color: {C.BG_LIGHT};
@@ -340,6 +372,11 @@ class NominaApp(QMainWindow):
         """Abre la ventana para gestionar empleados"""
         self.manage_window = ManageEmployeesWindow(self)
         self.manage_window.show()
+
+    def open_manage_loans(self):
+        """Abre la ventana para gestionar préstamos"""
+        self.loans_window = ManageLoansWindow(self)
+        self.loans_window.show()
     
     def view_payroll(self):
         """Permite seleccionar y ver un archivo de nómina"""
@@ -392,12 +429,14 @@ basándose en las horas trabajadas registradas.
 FUNCIONALIDADES:
 • Calcular nómina quincenal automáticamente
 • Gestionar empleados (agregar, eliminar, modificar)
+• Gestionar préstamos (crear, pausar, ver pagos, cierre automático al saldar)
 • Cálculo automático de horas extra (25% adicional después de las 3 PM)
 • Cálculo automático de pago por feriados/domingos (50% adicional)
 
 ARCHIVOS REQUERIDOS:
 • employees_information.xlsx - Información de empleados
 • Reporte de Asistencia.xlsx - Reporte de asistencia del escáner biométrico
+• prestamos.xlsx - Control de préstamos y bitácora de pagos (se crea automáticamente si no existe)
 
 TIPOS DE EMPLEADOS:
 • Salario Fijo: Cobran lo mismo sin importar las horas trabajadas
@@ -416,7 +455,7 @@ class ViewPayrollWindow(QDialog):
     def __init__(self, parent, df, total_general, filename):
         super().__init__(parent)
         self.setWindowTitle("Nómina Quincenal")
-        self.setMinimumSize(1200, 700)
+        adjust_window_to_screen(self, width_ratio=0.90, height_ratio=0.85, min_width_ratio=0.60, min_height_ratio=0.60)
         self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
@@ -599,7 +638,7 @@ class CalculatePayrollWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Calcular Nómina Quincenal")
-        self.setMinimumSize(700, 650)
+        adjust_window_to_screen(self, width_ratio=0.70, height_ratio=0.80, min_width_ratio=0.55, min_height_ratio=0.60)
         self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
@@ -618,6 +657,7 @@ class CalculatePayrollWindow(QDialog):
         
         self.calculate_btn = QPushButton("Calcular Nómina")
         self.calculate_btn.clicked.connect(self.calculate_payroll)
+        self.calculate_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.calculate_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().AQUA};
@@ -626,7 +666,6 @@ class CalculatePayrollWindow(QDialog):
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
-                min-width: 150px;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHT};
@@ -638,6 +677,7 @@ class CalculatePayrollWindow(QDialog):
         self.continue_btn = QPushButton("Continuar")
         self.continue_btn.clicked.connect(self.continue_operation)
         self.continue_btn.setEnabled(False)
+        self.continue_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.continue_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().AQUA};
@@ -646,7 +686,6 @@ class CalculatePayrollWindow(QDialog):
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
-                min-width: 150px;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHT};
@@ -657,6 +696,7 @@ class CalculatePayrollWindow(QDialog):
         
         fullscreen_btn = QPushButton("Pantalla Completa")
         fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         fullscreen_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().AQUA};
@@ -665,7 +705,6 @@ class CalculatePayrollWindow(QDialog):
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
-                min-width: 150px;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHT};
@@ -676,6 +715,7 @@ class CalculatePayrollWindow(QDialog):
         
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(self.close)
+        close_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().AQUA};
@@ -684,7 +724,6 @@ class CalculatePayrollWindow(QDialog):
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
-                min-width: 150px;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHT};
@@ -889,7 +928,7 @@ class ManageEmployeesWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Gestionar Empleados")
-        self.setMinimumSize(800, 600)
+        adjust_window_to_screen(self, width_ratio=0.70, height_ratio=0.80, min_width_ratio=0.55, min_height_ratio=0.60)
         self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
@@ -917,6 +956,7 @@ class ManageEmployeesWindow(QDialog):
         for text, command in buttons:
             btn = QPushButton(text)
             btn.clicked.connect(command)
+            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             # Usar AQUA para todos excepto eliminar (que usa RED)
             color = get_colors().RED if "Eliminar" in text else get_colors().AQUA
             btn.setStyleSheet(f"""
@@ -927,7 +967,6 @@ class ManageEmployeesWindow(QDialog):
                     border-radius: 6px;
                     padding: 12px 25px;
                     font-size: 12pt;
-                    min-width: 250px;
                 }}
                 QPushButton:hover {{
                     background-color: {get_colors().BG_LIGHT};
@@ -1024,7 +1063,7 @@ class ViewEmployeesWindow(QDialog):
     def __init__(self, parent, df):
         super().__init__(parent)
         self.setWindowTitle("Lista de Empleados")
-        self.setMinimumSize(900, 500)
+        adjust_window_to_screen(self, width_ratio=0.90, height_ratio=0.80, min_width_ratio=0.60, min_height_ratio=0.55)
         self._is_fullscreen = False
         
         layout = QVBoxLayout(self)
@@ -1135,7 +1174,7 @@ class AddEmployeeWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Agregar Empleado")
-        self.setMinimumSize(500, 600)
+        adjust_window_to_screen(self, width_ratio=0.55, height_ratio=0.80, min_width_ratio=0.45, min_height_ratio=0.60)
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -1319,7 +1358,7 @@ class ModifyEmployeeWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Modificar Empleado")
-        self.setMinimumSize(500, 650)
+        adjust_window_to_screen(self, width_ratio=0.55, height_ratio=0.85, min_width_ratio=0.45, min_height_ratio=0.60)
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -1559,7 +1598,7 @@ class DeleteEmployeeWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.setWindowTitle("Eliminar Empleado")
-        self.setMinimumSize(400, 200)
+        adjust_window_to_screen(self, width_ratio=0.50, height_ratio=0.40, min_width_ratio=0.40, min_height_ratio=0.35)
         
         layout = QVBoxLayout(self)
         layout.setSpacing(15)
@@ -1664,6 +1703,729 @@ class DeleteEmployeeWindow(QDialog):
             builtins.input = original_input
             sys.stdout = old_stdout
             QMessageBox.critical(self, "Error", f"Error al eliminar empleado:\n{str(e)}")
+
+
+class ManageLoansWindow(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Gestionar Préstamos")
+        adjust_window_to_screen(self, width_ratio=0.90, height_ratio=0.85, min_width_ratio=0.60, min_height_ratio=0.60)
+        self._is_fullscreen = False
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
+
+        title = QLabel("GESTIONAR PRÉSTAMOS")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(
+            f"font-size: 20pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;"
+        )
+        layout.addWidget(title)
+
+        # Filtro por empleado (para ver sus préstamos)
+        filter_row = QHBoxLayout()
+        filter_row.setAlignment(Qt.AlignCenter)
+        filter_row.setSpacing(10)
+
+        filter_label = QLabel("Empleado:")
+        filter_label.setStyleSheet(f"font-size: 12pt; color: {get_colors().FG_DARK};")
+        filter_row.addWidget(filter_label)
+
+        self.employee_filter = QComboBox()
+        self.employee_filter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.employee_filter.addItem("Todos", "")
+        try:
+            df_emp = leer_empleados_normalizado()
+            if df_emp is not None and not df_emp.empty:
+                for _, row in df_emp.iterrows():
+                    emp_id = str(row.get("ID", "")).strip()
+                    nombre = str(row.get("nombre", "")).strip()
+                    if emp_id:
+                        self.employee_filter.addItem(f"{emp_id} - {nombre}", emp_id)
+        except Exception:
+            # Si falla, dejamos el filtro en "Todos"
+            pass
+
+        self.employee_filter.currentIndexChanged.connect(self.refresh_loans)
+        filter_row.addWidget(self.employee_filter, 1)
+
+        layout.addLayout(filter_row)
+
+        # Tabla
+        self.table = QTableWidget()
+        self.table.setAlternatingRowColors(False)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setMinimumSectionSize(110)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                gridline-color: {get_colors().BG_LIGHTER};
+            }}
+            QTableWidget::item {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {get_colors().BLUE};
+                color: {get_colors().BUTTON_TEXT};
+            }}
+        """)
+        layout.addWidget(self.table)
+
+        # Botones de acción
+        actions = QHBoxLayout()
+        actions.setAlignment(Qt.AlignCenter)
+        actions.setSpacing(10)
+
+        refresh_btn = QPushButton("Actualizar")
+        refresh_btn.clicked.connect(self.refresh_loans)
+        refresh_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        actions.addWidget(refresh_btn)
+
+        new_btn = QPushButton("Nuevo Préstamo")
+        new_btn.clicked.connect(self.new_loan)
+        new_btn.setStyleSheet(refresh_btn.styleSheet())
+        actions.addWidget(new_btn)
+
+        toggle_btn = QPushButton("Pausar / Reanudar")
+        toggle_btn.clicked.connect(self.toggle_loan)
+        toggle_btn.setStyleSheet(refresh_btn.styleSheet())
+        actions.addWidget(toggle_btn)
+
+        payments_btn = QPushButton("Ver Pagos")
+        payments_btn.clicked.connect(self.view_payments)
+        payments_btn.setStyleSheet(refresh_btn.styleSheet())
+        actions.addWidget(payments_btn)
+
+        manual_payment_btn = QPushButton("Registrar Pago Manual")
+        manual_payment_btn.clicked.connect(self.manual_payment)
+        manual_payment_btn.setStyleSheet(refresh_btn.styleSheet())
+        actions.addWidget(manual_payment_btn)
+
+        close_loan_btn = QPushButton("Cerrar Préstamo")
+        close_loan_btn.clicked.connect(self.close_loan)
+        close_loan_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().ORANGE};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().ORANGE};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().ORANGE};
+            }}
+        """)
+        actions.addWidget(close_loan_btn)
+
+        layout.addLayout(actions)
+
+        # Barra inferior
+        bottom = QHBoxLayout()
+        bottom.setAlignment(Qt.AlignCenter)
+        bottom.setSpacing(10)
+
+        fullscreen_btn = QPushButton("Pantalla Completa")
+        fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        bottom.addWidget(fullscreen_btn)
+
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                border: 2px solid {get_colors().BG_LIGHTER};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHTER};
+                border-color: {get_colors().BLUE};
+            }}
+        """)
+        bottom.addWidget(close_btn)
+
+        layout.addLayout(bottom)
+
+        self._loans_df = pd.DataFrame()
+        self.refresh_loans()
+
+    def toggle_fullscreen(self):
+        if self._is_fullscreen:
+            self.showNormal()
+            self._is_fullscreen = False
+        else:
+            self.showFullScreen()
+            self._is_fullscreen = True
+
+    def refresh_loans(self):
+        try:
+            ensure_prestamos_file()
+            df = obtener_prestamos()
+            if df is None or df.empty:
+                self._loans_df = pd.DataFrame()
+                self.table.setRowCount(0)
+                self.table.setColumnCount(0)
+                return
+
+            # Preparar DF para visualización
+            df = df.copy()
+
+            # Aplicar filtro por empleado si está seleccionado
+            selected_emp_id = ""
+            try:
+                selected_emp_id = str(self.employee_filter.currentData() or "").strip()
+            except Exception:
+                selected_emp_id = ""
+            if selected_emp_id:
+                df = df[df["employee_id"].astype(str).str.strip() == selected_emp_id].copy()
+                if df.empty:
+                    self._loans_df = pd.DataFrame()
+                    self.table.setRowCount(0)
+                    self.table.setColumnCount(0)
+                    self.table.setHorizontalHeaderLabels([])
+                    return
+
+            for c in ["monto_original_centavos", "cuota_quincenal_centavos", "saldo_centavos"]:
+                if c not in df.columns:
+                    df[c] = 0
+
+            df["Monto"] = df["monto_original_centavos"].fillna(0).astype(int) / 100.0
+            df["Cuota Quincenal"] = df["cuota_quincenal_centavos"].fillna(0).astype(int) / 100.0
+            df["Saldo"] = df["saldo_centavos"].fillna(0).astype(int) / 100.0
+            if "fecha_inicio" in df.columns:
+                df["Fecha Inicio"] = pd.to_datetime(df["fecha_inicio"], errors="coerce").dt.strftime("%d/%m/%Y")
+            else:
+                df["Fecha Inicio"] = ""
+
+            cols = [
+                "loan_id",
+                "employee_id",
+                "employee_name",
+                "estado",
+                "Fecha Inicio",
+                "Monto",
+                "Cuota Quincenal",
+                "Saldo",
+                "nota",
+            ]
+            for c in cols:
+                if c not in df.columns:
+                    df[c] = ""
+
+            df_view = df[cols].copy()
+            df_view = df_view.rename(
+                columns={
+                    "loan_id": "Loan ID",
+                    "employee_id": "ID Empleado",
+                    "employee_name": "Empleado",
+                    "estado": "Estado",
+                    "nota": "Nota",
+                }
+            )
+
+            self._loans_df = df_view
+
+            self.table.setRowCount(len(df_view))
+            self.table.setColumnCount(len(df_view.columns))
+            self.table.setHorizontalHeaderLabels(df_view.columns)
+
+            for i, row in df_view.iterrows():
+                for j, col in enumerate(df_view.columns):
+                    val = row[col]
+                    if pd.isna(val):
+                        item_text = ""
+                    elif isinstance(val, (int, float)) and (("Monto" in col) or ("Cuota" in col) or ("Saldo" in col)):
+                        item_text = f"${val:,.2f}"
+                    else:
+                        item_text = str(val)
+                    item = QTableWidgetItem(item_text)
+                    item.setTextAlignment(Qt.AlignCenter)
+                    if ("Monto" in col) or ("Cuota" in col) or ("Saldo" in col):
+                        item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.table.setItem(i, j, item)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Error al cargar préstamos:\n{str(e)}")
+
+    def _get_selected_loan_id(self):
+        row = self.table.currentRow()
+        if row < 0 or self.table.columnCount() == 0:
+            return None
+        # La primera columna es Loan ID
+        item = self.table.item(row, 0)
+        return item.text().strip() if item else None
+
+    def _get_selected_loan_row(self):
+        loan_id = self._get_selected_loan_id()
+        if not loan_id or self._loans_df is None or self._loans_df.empty:
+            return None
+        mask = self._loans_df["Loan ID"].astype(str).str.strip() == loan_id
+        if not mask.any():
+            return None
+        return self._loans_df[mask].iloc[0]
+
+    def new_loan(self):
+        dlg = AddLoanDialog(self)
+        if dlg.exec_() == QDialog.Accepted:
+            self.refresh_loans()
+
+    def toggle_loan(self):
+        selected = self._get_selected_loan_row()
+        if selected is None:
+            QMessageBox.information(self, "Información", "Seleccione un préstamo.")
+            return
+        loan_id = str(selected["Loan ID"]).strip()
+        estado = str(selected.get("Estado", "")).strip().upper()
+        if estado == "CERRADO":
+            QMessageBox.information(self, "Información", "Este préstamo ya está cerrado.")
+            return
+
+        nuevo = "PAUSADO" if estado == "ACTIVO" else "ACTIVO"
+        try:
+            actualizar_estado_prestamo(loan_id, nuevo)
+            self.refresh_loans()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo actualizar el estado:\n{str(e)}")
+
+    def close_loan(self):
+        selected = self._get_selected_loan_row()
+        if selected is None:
+            QMessageBox.information(self, "Información", "Seleccione un préstamo.")
+            return
+        loan_id = str(selected["Loan ID"]).strip()
+        estado = str(selected.get("Estado", "")).strip().upper()
+        if estado == "CERRADO":
+            QMessageBox.information(self, "Información", "Este préstamo ya está cerrado.")
+            return
+
+        saldo_text = str(selected.get("Saldo", "0")).replace("$", "").replace(",", "").strip()
+        try:
+            saldo_val = float(saldo_text) if saldo_text else 0.0
+        except Exception:
+            saldo_val = 0.0
+
+        if saldo_val > 0:
+            resp = QMessageBox.question(
+                self,
+                "Confirmar cierre",
+                "Este préstamo aún tiene saldo.\n\n¿Desea CONDONAR el saldo (ponerlo en 0) y cerrar el préstamo?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if resp != QMessageBox.Yes:
+                return
+            condonar = True
+        else:
+            condonar = False
+
+        try:
+            cerrar_prestamo(loan_id, condonar=condonar)
+            self.refresh_loans()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo cerrar el préstamo:\n{str(e)}")
+
+    def view_payments(self):
+        selected = self._get_selected_loan_row()
+        if selected is None:
+            QMessageBox.information(self, "Información", "Seleccione un préstamo.")
+            return
+        loan_id = str(selected["Loan ID"]).strip()
+        empleado = str(selected.get("Empleado", "")).strip()
+        dlg = ViewLoanPaymentsWindow(self, loan_id, empleado)
+        dlg.exec_()
+
+    def manual_payment(self):
+        selected = self._get_selected_loan_row()
+        if selected is None:
+            QMessageBox.information(self, "Información", "Seleccione un préstamo.")
+            return
+        loan_id = str(selected["Loan ID"]).strip()
+        empleado = str(selected.get("Empleado", "")).strip()
+        saldo_text = str(selected.get("Saldo", "0")).replace("$", "").replace(",", "").strip()
+        try:
+            saldo_val = float(saldo_text) if saldo_text else 0.0
+        except Exception:
+            saldo_val = 0.0
+
+        dlg = ManualPaymentDialog(self, loan_id, empleado, saldo_val)
+        if dlg.exec_() == QDialog.Accepted:
+            self.refresh_loans()
+
+
+class AddLoanDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setWindowTitle("Nuevo Préstamo")
+        adjust_window_to_screen(self, width_ratio=0.55, height_ratio=0.60, min_width_ratio=0.45, min_height_ratio=0.45)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
+
+        title = QLabel("CREAR PRÉSTAMO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(
+            f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;"
+        )
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        # Empleado
+        self.employee_combo = QComboBox()
+        try:
+            df_emp = leer_empleados_normalizado()
+            if df_emp is None or df_emp.empty:
+                raise ValueError("No hay empleados registrados")
+            for _, row in df_emp.iterrows():
+                emp_id = str(row.get("ID", "")).strip()
+                nombre = str(row.get("nombre", "")).strip()
+                if emp_id:
+                    self.employee_combo.addItem(f"{emp_id} - {nombre}", emp_id)
+        except Exception:
+            self.employee_combo.addItem("No se pudieron cargar empleados", "")
+        form.addRow("Empleado:", self.employee_combo)
+
+        self.monto_edit = QLineEdit()
+        self.cuota_edit = QLineEdit()
+
+        self.fecha_edit = QDateEdit()
+        self.fecha_edit.setCalendarPopup(True)
+        self.fecha_edit.setDisplayFormat("dd/MM/yyyy")
+        self.fecha_edit.setDate(QDate.currentDate())
+
+        self.nota_edit = QLineEdit()
+
+        form.addRow("Monto préstamo ($):", self.monto_edit)
+        form.addRow("Cuota quincenal ($):", self.cuota_edit)
+        form.addRow("Fecha inicio:", self.fecha_edit)
+        form.addRow("Nota (opcional):", self.nota_edit)
+
+        layout.addLayout(form)
+
+        buttons = QHBoxLayout()
+        buttons.setAlignment(Qt.AlignCenter)
+        buttons.setSpacing(10)
+
+        create_btn = QPushButton("Crear")
+        create_btn.clicked.connect(self._create)
+        create_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        buttons.addWidget(create_btn)
+
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet(create_btn.styleSheet())
+        buttons.addWidget(cancel_btn)
+
+        layout.addLayout(buttons)
+
+    def _create(self):
+        emp_id = self.employee_combo.currentData()
+        emp_text = self.employee_combo.currentText()
+        if not emp_id:
+            QMessageBox.critical(self, "Error", "Debe seleccionar un empleado válido.")
+            return
+
+        # Extraer nombre del texto "ID - Nombre"
+        emp_name = emp_text.split(" - ", 1)[1].strip() if " - " in emp_text else ""
+
+        monto_str = self.monto_edit.text().strip().replace(",", "")
+        cuota_str = self.cuota_edit.text().strip().replace(",", "")
+        try:
+            monto = float(monto_str)
+            cuota = float(cuota_str)
+        except Exception:
+            QMessageBox.critical(self, "Error", "Monto y cuota deben ser números válidos.")
+            return
+
+        fecha = self.fecha_edit.date().toPyDate()
+        nota = self.nota_edit.text().strip()
+
+        try:
+            loan_id = crear_prestamo(emp_id, emp_name, monto, cuota, fecha_inicio=fecha, nota=nota)
+            QMessageBox.information(self, "Éxito", f"Préstamo creado exitosamente.\n\nLoan ID: {loan_id}")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo crear el préstamo:\n{str(e)}")
+
+
+class ViewLoanPaymentsWindow(QDialog):
+    def __init__(self, parent, loan_id: str, empleado: str = ""):
+        super().__init__(parent)
+        self.setWindowTitle("Pagos del Préstamo")
+        adjust_window_to_screen(self, width_ratio=0.90, height_ratio=0.80, min_width_ratio=0.60, min_height_ratio=0.55)
+        self._is_fullscreen = False
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        title = QLabel("PAGOS DEL PRÉSTAMO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
+        layout.addWidget(title)
+
+        subtitle = QLabel(f"Loan ID: {loan_id}" + (f" | Empleado: {empleado}" if empleado else ""))
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setStyleSheet(f"font-size: 12pt; color: {get_colors().FG_DARK};")
+        layout.addWidget(subtitle)
+
+        self.table = QTableWidget()
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setMinimumSectionSize(110)
+        self.table.verticalHeader().setVisible(False)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.table.setStyleSheet(f"""
+            QTableWidget {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                gridline-color: {get_colors().BG_LIGHTER};
+            }}
+            QTableWidget::item {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+            }}
+            QTableWidget::item:selected {{
+                background-color: {get_colors().BLUE};
+                color: {get_colors().BUTTON_TEXT};
+            }}
+        """)
+        layout.addWidget(self.table)
+
+        # Botones
+        btns = QHBoxLayout()
+        btns.setAlignment(Qt.AlignCenter)
+        btns.setSpacing(10)
+
+        fullscreen_btn = QPushButton("Pantalla Completa")
+        fullscreen_btn.clicked.connect(self.toggle_fullscreen)
+        fullscreen_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        btns.addWidget(fullscreen_btn)
+
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.close)
+        close_btn.setStyleSheet(fullscreen_btn.styleSheet())
+        btns.addWidget(close_btn)
+
+        layout.addLayout(btns)
+
+        self._load(loan_id)
+
+    def toggle_fullscreen(self):
+        if self._is_fullscreen:
+            self.showNormal()
+            self._is_fullscreen = False
+        else:
+            self.showFullScreen()
+            self._is_fullscreen = True
+
+    def _load(self, loan_id: str):
+        try:
+            df = obtener_pagos_prestamo(loan_id=loan_id)
+            if df is None or df.empty:
+                self.table.setRowCount(0)
+                self.table.setColumnCount(0)
+                return
+
+            df = df.copy()
+            if "tipo_pago" in df.columns:
+                df["Tipo"] = df["tipo_pago"].astype(str).str.upper().str.strip().replace({"": "NOMINA"})
+            else:
+                df["Tipo"] = "NOMINA"
+            if "nota" in df.columns:
+                df["Nota"] = df["nota"].astype(str)
+            else:
+                df["Nota"] = ""
+            df["Fecha Pago Nómina"] = pd.to_datetime(df["fecha_pago_nomina"], errors="coerce").dt.strftime("%d/%m/%Y")
+            df["Quincena Inicio"] = pd.to_datetime(df["quincena_inicio"], errors="coerce").dt.strftime("%d/%m/%Y")
+            df["Quincena Fin"] = pd.to_datetime(df["quincena_fin"], errors="coerce").dt.strftime("%d/%m/%Y")
+            df["Monto Pagado"] = df["monto_pagado_centavos"].fillna(0).astype(int) / 100.0
+            df["Saldo Antes"] = df["saldo_antes_centavos"].fillna(0).astype(int) / 100.0
+            df["Saldo Después"] = df["saldo_despues_centavos"].fillna(0).astype(int) / 100.0
+
+            view_cols = [
+                "Fecha Pago Nómina",
+                "Tipo",
+                "Monto Pagado",
+                "Saldo Antes",
+                "Saldo Después",
+                "Quincena Inicio",
+                "Quincena Fin",
+                "Nota",
+                "payment_id",
+            ]
+            df_view = df[view_cols].rename(columns={"payment_id": "Payment ID"})
+
+            self.table.setRowCount(len(df_view))
+            self.table.setColumnCount(len(df_view.columns))
+            self.table.setHorizontalHeaderLabels(df_view.columns)
+
+            for i, row in df_view.iterrows():
+                for j, col in enumerate(df_view.columns):
+                    val = row[col]
+                    if pd.isna(val):
+                        item_text = ""
+                    elif isinstance(val, (int, float)) and ("Monto" in col or "Saldo" in col):
+                        item_text = f"${val:,.2f}"
+                    else:
+                        item_text = str(val)
+                    item = QTableWidgetItem(item_text)
+                    item.setTextAlignment(Qt.AlignCenter)
+                    if "Monto" in col or "Saldo" in col:
+                        item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    self.table.setItem(i, j, item)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudieron cargar los pagos:\n{str(e)}")
+
+
+class ManualPaymentDialog(QDialog):
+    def __init__(self, parent, loan_id: str, empleado: str, saldo: float):
+        super().__init__(parent)
+        self.setWindowTitle("Registrar Pago Manual")
+        adjust_window_to_screen(self, width_ratio=0.55, height_ratio=0.55, min_width_ratio=0.45, min_height_ratio=0.45)
+
+        self._loan_id = loan_id
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(15)
+        layout.setContentsMargins(30, 20, 30, 20)
+
+        title = QLabel("PAGO MANUAL A PRÉSTAMO")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
+        layout.addWidget(title)
+
+        info = QLabel(f"Loan ID: {loan_id}\nEmpleado: {empleado}\nSaldo actual: ${saldo:,.2f}")
+        info.setAlignment(Qt.AlignCenter)
+        info.setStyleSheet(f"font-size: 12pt; color: {get_colors().FG_DARK};")
+        layout.addWidget(info)
+
+        form = QFormLayout()
+        form.setSpacing(10)
+
+        self.amount_edit = QLineEdit()
+        self.date_edit = QDateEdit()
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDisplayFormat("dd/MM/yyyy")
+        self.date_edit.setDate(QDate.currentDate())
+        self.note_edit = QLineEdit()
+
+        form.addRow("Monto a abonar ($):", self.amount_edit)
+        form.addRow("Fecha de pago:", self.date_edit)
+        form.addRow("Nota (opcional):", self.note_edit)
+        layout.addLayout(form)
+
+        btns = QHBoxLayout()
+        btns.setAlignment(Qt.AlignCenter)
+        btns.setSpacing(10)
+
+        save_btn = QPushButton("Registrar")
+        save_btn.clicked.connect(self._save)
+        save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 25px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        btns.addWidget(save_btn)
+
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setStyleSheet(save_btn.styleSheet())
+        btns.addWidget(cancel_btn)
+
+        layout.addLayout(btns)
+
+    def _save(self):
+        amount_str = self.amount_edit.text().strip().replace(",", "")
+        try:
+            amount = float(amount_str)
+        except Exception:
+            QMessageBox.critical(self, "Error", "El monto debe ser un número válido.")
+            return
+
+        fecha = self.date_edit.date().toPyDate()
+        nota = self.note_edit.text().strip()
+
+        try:
+            registrar_pago_manual_prestamo(self._loan_id, amount, fecha_pago=fecha, nota=nota)
+            QMessageBox.information(self, "Éxito", "Pago manual registrado exitosamente.")
+            self.accept()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo registrar el pago manual:\n{str(e)}")
 
 
 def main():

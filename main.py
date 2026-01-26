@@ -1,6 +1,498 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+import os
+import uuid
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Optional
+
+DEFAULT_PRESTAMOS_FILE = "prestamos.xlsx"
+
+
+def _money_to_cents(amount) -> int:
+    """
+    Convierte un monto (float/str/Decimal) a centavos (int) de forma determinista.
+    """
+    if amount is None or pd.isna(amount):
+        return 0
+    d = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return int(d * 100)
+
+
+def _cents_to_money(cents: int) -> float:
+    """
+    Convierte centavos (int) a dólares (float) para reportes/UI.
+    """
+    try:
+        return float(Decimal(int(cents)) / Decimal(100))
+    except Exception:
+        return 0.0
+
+
+def ensure_prestamos_file(prestamos_file: str = DEFAULT_PRESTAMOS_FILE) -> None:
+    """
+    Crea el archivo de préstamos si no existe.
+    Guarda:
+      - Hoja 'Prestamos' (estado del préstamo)
+      - Hoja 'PagosPrestamo' (bitácora de descuentos aplicados)
+    """
+    if os.path.exists(prestamos_file):
+        return
+
+    prestamos_columns = [
+        "loan_id",
+        "employee_id",
+        "employee_name",
+        "fecha_inicio",
+        "monto_original_centavos",
+        "cuota_quincenal_centavos",
+        "saldo_centavos",
+        "estado",  # ACTIVO | PAUSADO | CERRADO
+        "nota",
+        "creado_en",
+    ]
+    pagos_columns = [
+        "payment_id",
+        "loan_id",
+        "employee_id",
+        "tipo_pago",  # NOMINA | MANUAL
+        "fecha_pago_nomina",
+        "quincena_inicio",
+        "quincena_fin",
+        "monto_pagado_centavos",
+        "saldo_antes_centavos",
+        "saldo_despues_centavos",
+        "nota",
+        "creado_en",
+    ]
+
+    prestamos_df = pd.DataFrame(columns=prestamos_columns)
+    pagos_df = pd.DataFrame(columns=pagos_columns)
+
+    with pd.ExcelWriter(prestamos_file, engine="openpyxl") as writer:
+        prestamos_df.to_excel(writer, sheet_name="Prestamos", index=False)
+        pagos_df.to_excel(writer, sheet_name="PagosPrestamo", index=False)
+
+
+def leer_prestamos(prestamos_file: str = DEFAULT_PRESTAMOS_FILE):
+    """
+    Lee el archivo `prestamos.xlsx` y normaliza tipos/columnas.
+
+    Returns:
+        (prestamos_df, pagos_df)
+    """
+    ensure_prestamos_file(prestamos_file)
+
+    try:
+        xls = pd.ExcelFile(prestamos_file)
+        prestamos_df = (
+            pd.read_excel(prestamos_file, sheet_name="Prestamos")
+            if "Prestamos" in xls.sheet_names
+            else pd.DataFrame()
+        )
+        pagos_df = (
+            pd.read_excel(prestamos_file, sheet_name="PagosPrestamo")
+            if "PagosPrestamo" in xls.sheet_names
+            else pd.DataFrame()
+        )
+    except Exception as e:
+        print(f"[ERROR] No se pudo leer el archivo de préstamos '{prestamos_file}': {e}")
+        raise
+
+    # Asegurar columnas mínimas
+    prestamos_required = [
+        "loan_id",
+        "employee_id",
+        "employee_name",
+        "fecha_inicio",
+        "monto_original_centavos",
+        "cuota_quincenal_centavos",
+        "saldo_centavos",
+        "estado",
+        "nota",
+        "creado_en",
+    ]
+    for col in prestamos_required:
+        if col not in prestamos_df.columns:
+            prestamos_df[col] = None
+
+    pagos_required = [
+        "payment_id",
+        "loan_id",
+        "employee_id",
+        "tipo_pago",
+        "fecha_pago_nomina",
+        "quincena_inicio",
+        "quincena_fin",
+        "monto_pagado_centavos",
+        "saldo_antes_centavos",
+        "saldo_despues_centavos",
+        "nota",
+        "creado_en",
+    ]
+    for col in pagos_required:
+        if col not in pagos_df.columns:
+            pagos_df[col] = None
+
+    # Normalizar tipos
+    for col in ["loan_id", "employee_id", "employee_name", "estado", "nota"]:
+        prestamos_df[col] = prestamos_df[col].astype(str).where(prestamos_df[col].notna(), "")
+        prestamos_df[col] = prestamos_df[col].astype(str).str.strip()
+
+    if "fecha_inicio" in prestamos_df.columns:
+        prestamos_df["fecha_inicio"] = pd.to_datetime(prestamos_df["fecha_inicio"], errors="coerce")
+    if "creado_en" in prestamos_df.columns:
+        prestamos_df["creado_en"] = pd.to_datetime(prestamos_df["creado_en"], errors="coerce")
+
+    for cent_col in ["monto_original_centavos", "cuota_quincenal_centavos", "saldo_centavos"]:
+        prestamos_df[cent_col] = (
+            pd.to_numeric(prestamos_df[cent_col], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+    if "estado" in prestamos_df.columns:
+        prestamos_df["estado"] = prestamos_df["estado"].replace({"": "ACTIVO"}).fillna("ACTIVO")
+        prestamos_df["estado"] = prestamos_df["estado"].astype(str).str.upper().str.strip()
+
+    for col in ["payment_id", "loan_id", "employee_id", "tipo_pago", "nota"]:
+        pagos_df[col] = pagos_df[col].astype(str).where(pagos_df[col].notna(), "")
+        pagos_df[col] = pagos_df[col].astype(str).str.strip()
+
+    if "tipo_pago" in pagos_df.columns:
+        pagos_df["tipo_pago"] = pagos_df["tipo_pago"].replace({"": "NOMINA"}).fillna("NOMINA")
+        pagos_df["tipo_pago"] = pagos_df["tipo_pago"].astype(str).str.upper().str.strip()
+
+    for date_col in ["fecha_pago_nomina", "quincena_inicio", "quincena_fin", "creado_en"]:
+        if date_col in pagos_df.columns:
+            pagos_df[date_col] = pd.to_datetime(pagos_df[date_col], errors="coerce")
+
+    for cent_col in ["monto_pagado_centavos", "saldo_antes_centavos", "saldo_despues_centavos"]:
+        pagos_df[cent_col] = (
+            pd.to_numeric(pagos_df[cent_col], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
+    return prestamos_df[prestamos_required], pagos_df[pagos_required]
+
+
+def guardar_prestamos(prestamos_df: pd.DataFrame, pagos_df: pd.DataFrame, prestamos_file: str = DEFAULT_PRESTAMOS_FILE) -> None:
+    ensure_prestamos_file(prestamos_file)
+    with pd.ExcelWriter(prestamos_file, engine="openpyxl") as writer:
+        prestamos_df.to_excel(writer, sheet_name="Prestamos", index=False)
+        pagos_df.to_excel(writer, sheet_name="PagosPrestamo", index=False)
+
+
+def crear_prestamo(
+    employee_id,
+    employee_name: str,
+    monto,
+    cuota_quincenal,
+    fecha_inicio=None,
+    nota: str = "",
+    prestamos_file: str = DEFAULT_PRESTAMOS_FILE,
+) -> str:
+    """
+    Crea un préstamo nuevo (estado ACTIVO) y lo guarda en `prestamos.xlsx`.
+
+    Returns:
+        loan_id
+    """
+    prestamos_df, pagos_df = leer_prestamos(prestamos_file)
+
+    employee_id_str = str(employee_id).strip()
+    employee_name = (employee_name or "").strip()
+
+    monto_cent = _money_to_cents(monto)
+    cuota_cent = _money_to_cents(cuota_quincenal)
+    if monto_cent <= 0:
+        raise ValueError("El monto del préstamo debe ser mayor a 0")
+    if cuota_cent <= 0:
+        raise ValueError("La cuota quincenal debe ser mayor a 0")
+    if cuota_cent > monto_cent:
+        raise ValueError("La cuota quincenal no puede ser mayor al monto del préstamo")
+
+    fecha_inicio_dt = pd.to_datetime(fecha_inicio, errors="coerce") if fecha_inicio is not None else pd.Timestamp(datetime.now().date())
+    if pd.isna(fecha_inicio_dt):
+        raise ValueError("Fecha de inicio inválida")
+
+    loan_id = f"LN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
+    creado_en = pd.Timestamp(datetime.now())
+
+    nuevo = {
+        "loan_id": loan_id,
+        "employee_id": employee_id_str,
+        "employee_name": employee_name,
+        "fecha_inicio": fecha_inicio_dt,
+        "monto_original_centavos": monto_cent,
+        "cuota_quincenal_centavos": cuota_cent,
+        "saldo_centavos": monto_cent,
+        "estado": "ACTIVO",
+        "nota": (nota or "").strip(),
+        "creado_en": creado_en,
+    }
+
+    prestamos_df = pd.concat([prestamos_df, pd.DataFrame([nuevo])], ignore_index=True)
+    guardar_prestamos(prestamos_df, pagos_df, prestamos_file)
+    return loan_id
+
+
+def actualizar_estado_prestamo(loan_id: str, nuevo_estado: str, prestamos_file: str = DEFAULT_PRESTAMOS_FILE) -> None:
+    prestamos_df, pagos_df = leer_prestamos(prestamos_file)
+    loan_id = str(loan_id).strip()
+    nuevo_estado = str(nuevo_estado).strip().upper()
+    if nuevo_estado not in {"ACTIVO", "PAUSADO", "CERRADO"}:
+        raise ValueError("Estado inválido (use ACTIVO, PAUSADO o CERRADO)")
+
+    mask = prestamos_df["loan_id"].astype(str).str.strip() == loan_id
+    if not mask.any():
+        raise ValueError(f"No se encontró el préstamo con loan_id={loan_id}")
+
+    prestamos_df.loc[mask, "estado"] = nuevo_estado
+    guardar_prestamos(prestamos_df, pagos_df, prestamos_file)
+
+
+def cerrar_prestamo(loan_id: str, condonar: bool = False, prestamos_file: str = DEFAULT_PRESTAMOS_FILE) -> None:
+    """
+    Cierra un préstamo. Si `condonar=True`, pone el saldo en 0.
+    """
+    prestamos_df, pagos_df = leer_prestamos(prestamos_file)
+    loan_id = str(loan_id).strip()
+    mask = prestamos_df["loan_id"].astype(str).str.strip() == loan_id
+    if not mask.any():
+        raise ValueError(f"No se encontró el préstamo con loan_id={loan_id}")
+
+    if condonar:
+        prestamos_df.loc[mask, "saldo_centavos"] = 0
+    prestamos_df.loc[mask, "estado"] = "CERRADO"
+    guardar_prestamos(prestamos_df, pagos_df, prestamos_file)
+
+
+def obtener_prestamos(prestamos_file: str = DEFAULT_PRESTAMOS_FILE) -> pd.DataFrame:
+    prestamos_df, _ = leer_prestamos(prestamos_file)
+    return prestamos_df.copy()
+
+
+def obtener_pagos_prestamo(
+    prestamos_file: str = DEFAULT_PRESTAMOS_FILE,
+    loan_id: Optional[str] = None,
+    employee_id: Optional[str] = None,
+) -> pd.DataFrame:
+    _, pagos_df = leer_prestamos(prestamos_file)
+    df = pagos_df.copy()
+    if loan_id:
+        df = df[df["loan_id"].astype(str).str.strip() == str(loan_id).strip()]
+    if employee_id:
+        df = df[df["employee_id"].astype(str).str.strip() == str(employee_id).strip()]
+    df = df.sort_values(["fecha_pago_nomina", "creado_en"], na_position="last")
+    return df
+
+
+def aplicar_descuento_prestamos_en_memoria(
+    prestamos_df: pd.DataFrame,
+    pagos_df: pd.DataFrame,
+    employee_id,
+    employee_name: str,
+    fecha_pago,
+    quincena_inicio=None,
+    quincena_fin=None,
+    max_descuento_centavos: Optional[int] = None,
+):
+    """
+    Aplica el descuento de préstamos (si existen) para un empleado.
+    Modifica `prestamos_df` y `pagos_df` en memoria (sin guardar).
+
+    Returns:
+        (descuento_total_centavos, saldo_total_centavos, pagos_df_actualizado)
+    """
+    employee_id_str = str(employee_id).strip()
+    employee_name = (employee_name or "").strip()
+
+    fecha_pago_dt = pd.to_datetime(fecha_pago, errors="coerce")
+    if pd.isna(fecha_pago_dt):
+        return 0, 0, pagos_df
+
+    quincena_inicio_dt = pd.to_datetime(quincena_inicio, errors="coerce") if quincena_inicio is not None else pd.NaT
+    quincena_fin_dt = pd.to_datetime(quincena_fin, errors="coerce") if quincena_fin is not None else pd.NaT
+
+    df_emp = prestamos_df[
+        (prestamos_df["employee_id"].astype(str).str.strip() == employee_id_str)
+        & (prestamos_df["estado"].astype(str).str.upper().str.strip() == "ACTIVO")
+        & (prestamos_df["saldo_centavos"] > 0)
+    ].copy()
+
+    if df_emp.empty:
+        saldo_total = prestamos_df[
+            (prestamos_df["employee_id"].astype(str).str.strip() == employee_id_str)
+            & (prestamos_df["estado"].astype(str).str.upper().str.strip().isin(["ACTIVO", "PAUSADO"]))
+        ]["saldo_centavos"].sum()
+        return 0, int(saldo_total) if pd.notna(saldo_total) else 0, pagos_df
+
+    # Solo préstamos cuya fecha_inicio sea <= fecha_pago
+    df_emp["fecha_inicio"] = pd.to_datetime(df_emp["fecha_inicio"], errors="coerce")
+    df_emp = df_emp[df_emp["fecha_inicio"].notna() & (df_emp["fecha_inicio"] <= fecha_pago_dt)]
+    if df_emp.empty:
+        saldo_total = prestamos_df[
+            (prestamos_df["employee_id"].astype(str).str.strip() == employee_id_str)
+            & (prestamos_df["estado"].astype(str).str.upper().str.strip().isin(["ACTIVO", "PAUSADO"]))
+        ]["saldo_centavos"].sum()
+        return 0, int(saldo_total) if pd.notna(saldo_total) else 0, pagos_df
+
+    df_emp = df_emp.sort_values(["fecha_inicio", "creado_en"], na_position="last")
+
+    disponible = int(max_descuento_centavos) if max_descuento_centavos is not None else 10**18
+    descuento_total = 0
+    now_ts = pd.Timestamp(datetime.now())
+    nuevos_pagos = []
+
+    # Evitar doble descuento NOMINA si se recalcula la misma quincena (idempotencia por loan_id + fecha_pago_nomina)
+    existing_keys = set()
+    try:
+        if (
+            pagos_df is not None
+            and (not pagos_df.empty)
+            and ("loan_id" in pagos_df.columns)
+            and ("fecha_pago_nomina" in pagos_df.columns)
+        ):
+            # Solo bloquear duplicados de pagos tipo NOMINA
+            if "tipo_pago" in pagos_df.columns:
+                tmp = pagos_df[["loan_id", "fecha_pago_nomina", "tipo_pago"]].copy()
+                tmp["tipo_pago"] = tmp["tipo_pago"].astype(str).str.upper().str.strip().replace({"": "NOMINA"})
+                tmp = tmp[tmp["tipo_pago"] == "NOMINA"]
+            else:
+                tmp = pagos_df[["loan_id", "fecha_pago_nomina"]].copy()
+            tmp["loan_id"] = tmp["loan_id"].astype(str).str.strip()
+            tmp["fecha_pago_nomina"] = pd.to_datetime(tmp["fecha_pago_nomina"], errors="coerce").dt.normalize()
+            tmp = tmp.dropna(subset=["loan_id", "fecha_pago_nomina"])
+            existing_keys = set(zip(tmp["loan_id"], tmp["fecha_pago_nomina"].astype("datetime64[ns]")))
+    except Exception:
+        existing_keys = set()
+    fecha_pago_key = fecha_pago_dt.normalize().to_datetime64()
+
+    for _, loan in df_emp.iterrows():
+        if disponible <= 0:
+            break
+
+        loan_id = str(loan["loan_id"]).strip()
+        if (loan_id, fecha_pago_key) in existing_keys:
+            # Ya se registró un pago para este préstamo en esta fecha de nómina
+            continue
+        saldo = int(loan["saldo_centavos"]) if pd.notna(loan["saldo_centavos"]) else 0
+        cuota = int(loan["cuota_quincenal_centavos"]) if pd.notna(loan["cuota_quincenal_centavos"]) else 0
+        if saldo <= 0 or cuota <= 0:
+            continue
+
+        pagar = min(cuota, saldo, disponible)
+        if pagar <= 0:
+            continue
+
+        # Actualizar préstamo en DF principal
+        mask = prestamos_df["loan_id"].astype(str).str.strip() == loan_id
+        saldo_antes = int(prestamos_df.loc[mask, "saldo_centavos"].iloc[0])
+        saldo_despues = max(0, saldo_antes - pagar)
+        prestamos_df.loc[mask, "saldo_centavos"] = saldo_despues
+        if saldo_despues == 0:
+            prestamos_df.loc[mask, "estado"] = "CERRADO"
+        if employee_name and (prestamos_df.loc[mask, "employee_name"].astype(str).str.strip() == "").any():
+            prestamos_df.loc[mask, "employee_name"] = employee_name
+
+        payment_id = f"PM-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
+        nuevos_pagos.append(
+            {
+                "payment_id": payment_id,
+                "loan_id": loan_id,
+                "employee_id": employee_id_str,
+                "tipo_pago": "NOMINA",
+                "fecha_pago_nomina": fecha_pago_dt,
+                "quincena_inicio": quincena_inicio_dt,
+                "quincena_fin": quincena_fin_dt,
+                "monto_pagado_centavos": int(pagar),
+                "saldo_antes_centavos": int(saldo_antes),
+                "saldo_despues_centavos": int(saldo_despues),
+                "nota": "",
+                "creado_en": now_ts,
+            }
+        )
+        existing_keys.add((loan_id, fecha_pago_key))
+
+        descuento_total += pagar
+        disponible -= pagar
+
+    if nuevos_pagos:
+        pagos_df = pd.concat([pagos_df, pd.DataFrame(nuevos_pagos)], ignore_index=True)
+
+    saldo_total = prestamos_df[
+        (prestamos_df["employee_id"].astype(str).str.strip() == employee_id_str)
+        & (prestamos_df["estado"].astype(str).str.upper().str.strip().isin(["ACTIVO", "PAUSADO"]))
+    ]["saldo_centavos"].sum()
+
+    return int(descuento_total), int(saldo_total) if pd.notna(saldo_total) else 0, pagos_df
+
+
+def registrar_pago_manual_prestamo(
+    loan_id: str,
+    monto,
+    fecha_pago=None,
+    nota: str = "",
+    prestamos_file: str = DEFAULT_PRESTAMOS_FILE,
+) -> None:
+    """
+    Registra un pago manual a un préstamo:
+      - Actualiza saldo
+      - Registra en 'PagosPrestamo' con tipo_pago='MANUAL'
+      - Cierra el préstamo si llega a 0
+    """
+    prestamos_df, pagos_df = leer_prestamos(prestamos_file)
+    loan_id = str(loan_id).strip()
+
+    mask = prestamos_df["loan_id"].astype(str).str.strip() == loan_id
+    if not mask.any():
+        raise ValueError(f"No se encontró el préstamo con loan_id={loan_id}")
+
+    estado = str(prestamos_df.loc[mask, "estado"].iloc[0]).strip().upper()
+    saldo_antes = int(prestamos_df.loc[mask, "saldo_centavos"].iloc[0])
+    if saldo_antes <= 0:
+        raise ValueError("Este préstamo ya no tiene saldo.")
+    if estado == "CERRADO":
+        raise ValueError("Este préstamo está cerrado.")
+
+    monto_cent = _money_to_cents(monto)
+    if monto_cent <= 0:
+        raise ValueError("El monto del pago debe ser mayor a 0")
+    if monto_cent > saldo_antes:
+        raise ValueError("El monto del pago no puede ser mayor al saldo pendiente")
+
+    fecha_pago_dt = pd.to_datetime(fecha_pago, errors="coerce") if fecha_pago is not None else pd.Timestamp(datetime.now().date())
+    if pd.isna(fecha_pago_dt):
+        raise ValueError("Fecha de pago inválida")
+
+    saldo_despues = saldo_antes - monto_cent
+    prestamos_df.loc[mask, "saldo_centavos"] = saldo_despues
+    if saldo_despues == 0:
+        prestamos_df.loc[mask, "estado"] = "CERRADO"
+
+    employee_id = str(prestamos_df.loc[mask, "employee_id"].iloc[0]).strip()
+
+    payment_id = f"PM-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
+    now_ts = pd.Timestamp(datetime.now())
+    nuevo_pago = {
+        "payment_id": payment_id,
+        "loan_id": loan_id,
+        "employee_id": employee_id,
+        "tipo_pago": "MANUAL",
+        "fecha_pago_nomina": fecha_pago_dt,
+        "quincena_inicio": pd.NaT,
+        "quincena_fin": pd.NaT,
+        "monto_pagado_centavos": int(monto_cent),
+        "saldo_antes_centavos": int(saldo_antes),
+        "saldo_despues_centavos": int(saldo_despues),
+        "nota": (nota or "").strip(),
+        "creado_en": now_ts,
+    }
+
+    pagos_df = pd.concat([pagos_df, pd.DataFrame([nuevo_pago])], ignore_index=True)
+    guardar_prestamos(prestamos_df, pagos_df, prestamos_file)
 
 feriados_panama = {
     2026: {
@@ -339,14 +831,14 @@ def calculate_hours_per_day(hours_df):
                 entrada_hour_final = horas_raw[0] if horas_raw else 7
                 salida_hour_final = horas_raw[1] if len(horas_raw) > 1 else 15
             
-            # APLICAR MARGEN DE ERROR DE 10 MINUTOS PARA LA ENTRADA
-            # Si la entrada está entre 6:50 y 7:10, se cuenta como 7:00
-            if entrada_hour_final == 6 and entrada_minute >= 50:
-                # Llegó entre 6:50 y 6:59, se cuenta como 7:00
+            # NORMALIZAR HORA DE ENTRADA (regla de 7:00 AM)
+            # - Si llega ANTES de las 7:00 AM: se registra como 7:00 AM (sin importar la hora)
+            # - Si llega entre 7:00 y 7:05 AM (incluyente): se registra como 7:00 AM
+            # - Después de 7:05 AM: se registra la hora real (para que aplique descuento/retardo)
+            if entrada_hour_final < 7:
                 entrada_hour_final = 7
                 entrada_minute = 0
-            elif entrada_hour_final == 7 and entrada_minute <= 10:
-                # Llegó entre 7:00 y 7:10, se cuenta como 7:00
+            elif entrada_hour_final == 7 and entrada_minute <= 5:
                 entrada_minute = 0
             
             # Calcular horas extra
@@ -471,7 +963,8 @@ def get_quincena_periods(daily_hours_df):
 def calculate_payroll_quincenal(employees_file="employees_information.xlsx", 
                                  hours_file="Reporte de Asistencia.xlsx",
                                  output_file=None,
-                                 quincena_fecha=None):
+                                 quincena_fecha=None,
+                                 prestamos_file: str = DEFAULT_PRESTAMOS_FILE):
     """
     Calcula la nómina quincenal para todos los empleados de UNA quincena específica.
     
@@ -553,6 +1046,18 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     quincena_fin_target = quincena_inicio_target + timedelta(days=14)
     
     print(f"Período de la quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
+
+    # Determinar fecha de pago según la quincena (se usa también para préstamos)
+    if quincena_inicio_target.day == 1:
+        # Primera quincena: pago el día 15
+        fecha_pago = quincena_inicio_target.replace(day=15)
+    else:
+        # Segunda quincena: pago el último día del mes
+        if quincena_inicio_target.month == 12:
+            fecha_pago = quincena_inicio_target.replace(day=31)
+        else:
+            siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
+            fecha_pago = siguiente_mes - timedelta(days=1)
     
     # Filtrar solo los datos de la quincena objetivo
     daily_hours_df = daily_hours_df[daily_hours_df['quincena_inicio'] == quincena_inicio_target]
@@ -610,6 +1115,16 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     # Calcular nómina por quincena (solo una quincena ahora)
     print("\nCalculando nómina...")
     payroll_results = []
+
+    # Cargar préstamos una sola vez (si existe el archivo)
+    prestamos_enabled = True
+    any_prestamo_changes = False
+    try:
+        prestamos_df, pagos_df = leer_prestamos(prestamos_file)
+    except Exception:
+        prestamos_enabled = False
+        prestamos_df, pagos_df = pd.DataFrame(), pd.DataFrame()
+        print(f"[ADVERTENCIA] No se pudo cargar '{prestamos_file}'. Se omitirá el descuento de préstamos.")
     
     for (employee_id, quincena_inicio), group in daily_hours_df.groupby(['ID', 'quincena_inicio']):
         employee_id_str = str(employee_id)
@@ -735,10 +1250,37 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         seguro_educativo = 0.0
         descuento_isl = 0.0
         if emp_info['empleado_por_contrato']:
-            seguro_social = pago_quincenal * 0.03
-            seguro_educativo = pago_quincenal * 0.05
+            seguro_social = pago_quincenal * 0.0975
+            seguro_educativo = pago_quincenal * 0.0125
             descuento_isl = emp_info['isl']
-        total_descuentos = seguro_social + seguro_educativo + descuento_isl
+        total_descuentos_base = seguro_social + seguro_educativo + descuento_isl
+
+        # Descuento por préstamos (si aplica). Se capea para no dejar neto negativo.
+        descuento_prestamo = 0.0
+        saldo_prestamo_total = 0.0
+        if prestamos_enabled:
+            try:
+                pago_cent = _money_to_cents(pago_quincenal)
+                base_desc_cent = _money_to_cents(total_descuentos_base)
+                max_prestamo_cent = max(0, pago_cent - base_desc_cent)
+                prestamo_cent, saldo_total_cent, pagos_df = aplicar_descuento_prestamos_en_memoria(
+                    prestamos_df,
+                    pagos_df,
+                    employee_id_str,
+                    emp_info['nombre'],
+                    fecha_pago,
+                    quincena_inicio,
+                    quincena_fin,
+                    max_prestamo_cent,
+                )
+                descuento_prestamo = _cents_to_money(prestamo_cent)
+                saldo_prestamo_total = _cents_to_money(saldo_total_cent)
+                if prestamo_cent > 0:
+                    any_prestamo_changes = True
+            except Exception as e:
+                print(f"[ADVERTENCIA] No se pudo aplicar préstamo para empleado {employee_id_str}: {e}")
+
+        total_descuentos = total_descuentos_base + descuento_prestamo
 
         # Preparar datos para el resultado
         resultado = {
@@ -756,10 +1298,12 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Horas Extra (después 3 PM)': round(total_horas_extra, 2),
             'Pago Extra (25% adicional)': round(pago_extra, 2),
             'Pago Quincenal': round(pago_quincenal, 2),
-            'Seguro Social (3%)': round(seguro_social, 2),
-            'Seguro Educativo (5%)': round(seguro_educativo, 2),
+            'Seguro Social (9.75%)': round(seguro_social, 2),
+            'Seguro Educativo (1.25%)': round(seguro_educativo, 2),
             'ISL': round(descuento_isl, 2),
+            'Descuento Préstamo': round(descuento_prestamo, 2),
             'Total Descuentos': round(total_descuentos, 2),
+            'Total Saldo Préstamo': round(saldo_prestamo_total, 2),
             'Número de Cuenta': emp_info['n_de_cuenta'],
             'Banco': emp_info['banco'],
             'Tipo de Cuenta': emp_info['tipo_de_cuenta']
@@ -782,23 +1326,13 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     
     # Ordenar por nombre
     payroll_df = payroll_df.sort_values(['Nombre'])
-    
-    # Determinar fecha de pago según la quincena
-    # Si la quincena empieza el día 1: fecha de pago es el día 15 del mismo mes
-    # Si la quincena empieza el día 16: fecha de pago es el último día del mismo mes
-    if quincena_inicio_target.day == 1:
-        # Primera quincena: pago el día 15
-        fecha_pago = quincena_inicio_target.replace(day=15)
-    else:
-        # Segunda quincena: pago el último día del mes
-        # Obtener el último día del mes
-        if quincena_inicio_target.month == 12:
-            # Si es diciembre, el último día es 31
-            fecha_pago = quincena_inicio_target.replace(day=31)
-        else:
-            # Para otros meses, el último día del mes es el día antes del día 1 del mes siguiente
-            siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
-            fecha_pago = siguiente_mes - timedelta(days=1)
+
+    # Guardar cambios de préstamos si se aplicaron descuentos
+    if prestamos_enabled and any_prestamo_changes:
+        try:
+            guardar_prestamos(prestamos_df, pagos_df, prestamos_file)
+        except Exception as e:
+            print(f"[ADVERTENCIA] No se pudieron guardar los cambios en préstamos: {e}")
     
     # Generar nombre de archivo si no se especificó
     if output_file is None:
@@ -845,7 +1379,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
                 'Total Horas Trabajadas', 'Horas Extra (después 3 PM)', 
                 'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
                 'Pago Feriado/Domingo (50% adicional)', 
-                'Seguro Social (3%)', 'Seguro Educativo (5%)', 'ISL', 'Total Descuentos',
+                'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISL', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
                 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
     
     # Solo incluir columnas que existen en el DataFrame
