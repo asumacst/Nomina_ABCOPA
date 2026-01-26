@@ -7,6 +7,105 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 DEFAULT_PRESTAMOS_FILE = "prestamos.xlsx"
+DEFAULT_SEGURIDAD_HORARIO_FILE = "seguridad_horario.xlsx"
+
+
+def parse_bool(value) -> bool:
+    """Normaliza un valor tipo S/N, Sí/No, 1/0, True/False a booleano."""
+    if value is None or (isinstance(value, float) and pd.isna(value)) or pd.isna(value):
+        return False
+    if isinstance(value, (int, float, np.integer)):
+        return value != 0
+    text = str(value).strip().lower()
+    return text in ["s", "si", "sí", "y", "yes", "true", "1"]
+
+
+def get_column_value(row, candidates, default=None):
+    """Obtiene el primer valor disponible de una lista de columnas."""
+    for col in candidates:
+        if col in row and pd.notna(row[col]):
+            return row[col]
+    return default
+
+
+def ensure_seguridad_horario_file(horario_file: str = DEFAULT_SEGURIDAD_HORARIO_FILE) -> None:
+    """
+    Crea un archivo de configuración de seguridad si no existe.
+    Este archivo permite cambiar el turno sin tocar código.
+    """
+    if os.path.exists(horario_file):
+        return
+
+    columns = [
+        "vigente_desde",                 # fecha desde la cual aplica esta configuración
+        "horas_turno",                   # ej: 12
+        "hora_cambio_turno",             # HH:MM (inicio del turno Día). El turno Noche inicia + horas_turno.
+        "margen_salida_minutos",         # ej: 10 (antes/después de la hora de salida programada)
+        "tolerancia_turno_minutos",      # ej: 30 (tolerancia para duración real vs horas_turno)
+        "empleados_turno_dia",           # informativo
+        "empleados_turno_noche",         # informativo
+        "nota",
+    ]
+    df = pd.DataFrame([{
+        "vigente_desde": datetime.now().date(),
+        "horas_turno": 12,
+        "hora_cambio_turno": "07:00",
+        "margen_salida_minutos": 10,
+        "tolerancia_turno_minutos": 30,
+        "empleados_turno_dia": 0,
+        "empleados_turno_noche": 0,
+        "nota": "Editar este archivo para ajustar turnos de seguridad",
+    }], columns=columns)
+
+    with pd.ExcelWriter(horario_file, engine="openpyxl") as writer:
+        df.to_excel(writer, sheet_name="Config", index=False)
+
+
+def leer_seguridad_config(fecha_referencia=None, horario_file: str = DEFAULT_SEGURIDAD_HORARIO_FILE) -> dict:
+    """
+    Lee la configuración de turnos de seguridad vigente para una fecha.
+    """
+    ensure_seguridad_horario_file(horario_file)
+    df = pd.read_excel(horario_file, sheet_name="Config")
+    if df is None or df.empty:
+        return {
+            "horas_turno": 12,
+            "hora_cambio_turno": "07:00",
+            "margen_salida_minutos": 10,
+            "empleados_turno_dia": 0,
+            "empleados_turno_noche": 0,
+        }
+
+    df = df.copy()
+    df["vigente_desde"] = pd.to_datetime(df.get("vigente_desde"), errors="coerce")
+    df = df[df["vigente_desde"].notna()].sort_values("vigente_desde")
+    if df.empty:
+        chosen = None
+    else:
+        ref = pd.to_datetime(fecha_referencia, errors="coerce") if fecha_referencia is not None else pd.Timestamp(datetime.now().date())
+        if pd.isna(ref):
+            ref = pd.Timestamp(datetime.now().date())
+        candidates = df[df["vigente_desde"] <= ref]
+        chosen = candidates.iloc[-1] if not candidates.empty else df.iloc[0]
+
+    if chosen is None:
+        chosen = df.iloc[0]
+
+    horas_turno = int(pd.to_numeric(chosen.get("horas_turno", 12), errors="coerce") or 12)
+    hora_cambio = str(chosen.get("hora_cambio_turno", "07:00")).strip() or "07:00"
+    margen = int(pd.to_numeric(chosen.get("margen_salida_minutos", 10), errors="coerce") or 10)
+    tolerancia = int(pd.to_numeric(chosen.get("tolerancia_turno_minutos", 30), errors="coerce") or 30)
+    empleados_dia = int(pd.to_numeric(chosen.get("empleados_turno_dia", 0), errors="coerce") or 0)
+    empleados_noche = int(pd.to_numeric(chosen.get("empleados_turno_noche", 0), errors="coerce") or 0)
+
+    return {
+        "horas_turno": max(1, horas_turno),
+        "hora_cambio_turno": hora_cambio,
+        "margen_salida_minutos": max(0, margen),
+        "tolerancia_turno_minutos": max(0, tolerancia),
+        "empleados_turno_dia": max(0, empleados_dia),
+        "empleados_turno_noche": max(0, empleados_noche),
+    }
 
 
 def _money_to_cents(amount) -> int:
@@ -703,7 +802,7 @@ def leer_reporte_asistencia(archivo="Reporte de Asistencia.xlsx"):
         raise
 
 
-def validate_attendance_records(hours_df):
+def validate_attendance_records(hours_df, security_ids=None):
     """
     Valida que cada empleado tenga exactamente 2 registros por día (entrada y salida).
     Si hay más o menos de 2, retorna una lista de errores.
@@ -715,12 +814,18 @@ def validate_attendance_records(hours_df):
         Lista de errores encontrados. Si está vacía, no hay errores.
     """
     errors = []
+    security_ids = set(str(x).strip() for x in security_ids) if security_ids else set()
     
     # Agrupar por empleado (usando ID) y fecha
     for (employee_id, date), group in hours_df.groupby(['ID', 'fecha']):
+        employee_id_str = str(employee_id).strip()
         record_count = len(group)
         employee_name = group['nombre'].iloc[0]
-        
+
+        # Para empleados de seguridad, NO exigimos 2 por día porque puede haber turnos que cruzan medianoche.
+        if employee_id_str in security_ids:
+            continue
+
         if record_count != 2:
             date_str = date.strftime('%Y-%m-%d') if isinstance(date, pd.Timestamp) else str(date)
             errors.append({
@@ -730,6 +835,23 @@ def validate_attendance_records(hours_df):
                 'registros': record_count,
                 'mensaje': f"Empleado {employee_name} (ID: {employee_id}) tiene {record_count} registro(s) el {date_str}. Se requieren exactamente 2 (entrada y salida)."
             })
+
+    # Validación adicional para seguridad: cantidad de registros por empleado debe ser par
+    if security_ids:
+        for employee_id, group in hours_df.groupby(["ID"]):
+            employee_id_str = str(employee_id).strip()
+            if employee_id_str not in security_ids:
+                continue
+            count = len(group)
+            if count < 2 or (count % 2) != 0:
+                employee_name = group["nombre"].iloc[0] if "nombre" in group.columns and not group.empty else ""
+                errors.append({
+                    "empleado": employee_name,
+                    "ID": employee_id,
+                    "fecha": "",
+                    "registros": count,
+                    "mensaje": f"Empleado de seguridad {employee_name} (ID: {employee_id}) tiene {count} registro(s) totales. Se requiere un número par para poder emparejar entrada/salida.",
+                })
     
     return errors
 
@@ -929,6 +1051,184 @@ def calculate_hours_per_day(hours_df):
     return pd.DataFrame(daily_hours)
 
 
+def calculate_hours_per_day_security(hours_df, security_ids, security_config):
+    """
+    Calcula horas para empleados de seguridad emparejando registros consecutivos (entrada/salida),
+    soportando turnos que cruzan medianoche.
+
+    Reglas:
+    - Turno fijo de `horas_turno`
+    - Ajuste de salida: si está dentro de +/- `margen_salida_minutos` alrededor de la hora de salida programada,
+      se ajusta a la hora programada.
+    - Horas extra: mismas reglas que 'por horas' (después de 15:00 o 12:00 sábado). Si la entrada es después del límite,
+      todas las horas cuentan como extra.
+
+    Returns:
+        DataFrame con columnas compatibles con el resto:
+          ID, nombre, fecha, horas_trabajadas, horas_extra, es_feriado_domingo, es_seguridad, turno_seguridad
+    """
+    security_ids = set(str(x).strip() for x in security_ids) if security_ids else set()
+    if not security_ids:
+        return pd.DataFrame(columns=["ID", "nombre", "fecha", "horas_trabajadas", "horas_extra", "es_feriado_domingo", "es_seguridad", "turno_seguridad"])
+
+    df = hours_df.copy()
+    # Asegurar fecha datetime
+    if not pd.api.types.is_datetime64_any_dtype(df["fecha"]):
+        df["fecha"] = pd.to_datetime(df["fecha"], errors="coerce")
+        if df["fecha"].isna().any():
+            df["fecha"] = pd.to_datetime(df["fecha"], format="%d/%m/%Y", errors="coerce")
+
+    # Parsear hora HH:MM a datetime.time
+    def parse_time_str(time_str):
+        if pd.isna(time_str):
+            return None
+        s = str(time_str).strip()
+        try:
+            parts = s.split(":")
+            hour = int(parts[0])
+            minute = int(parts[1]) if len(parts) > 1 else 0
+            return datetime.min.time().replace(hour=hour, minute=minute)
+        except Exception:
+            return None
+
+    df["time_obj"] = df["hora"].apply(parse_time_str)
+    df = df[df["fecha"].notna() & df["time_obj"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["ID", "nombre", "fecha", "horas_trabajadas", "horas_extra", "es_feriado_domingo", "es_seguridad", "turno_seguridad"])
+
+    df["ID_str"] = df["ID"].astype(str).str.strip()
+    df = df[df["ID_str"].isin(security_ids)].copy()
+    if df.empty:
+        return pd.DataFrame(columns=["ID", "nombre", "fecha", "horas_trabajadas", "horas_extra", "es_feriado_domingo", "es_seguridad", "turno_seguridad"])
+
+    horas_turno = int(security_config.get("horas_turno", 12) or 12)
+    margen_min = int(security_config.get("margen_salida_minutos", 10) or 10)
+    tolerancia_min = int(security_config.get("tolerancia_turno_minutos", 30) or 30)
+    hora_cambio = str(security_config.get("hora_cambio_turno", "07:00") or "07:00").strip()
+    try:
+        cambio_h, cambio_m = [int(x) for x in hora_cambio.split(":")]
+    except Exception:
+        cambio_h, cambio_m = 7, 0
+
+    daily_rows = []
+
+    for employee_id, g in df.groupby("ID"):
+        g = g.sort_values(["fecha", "hora"]).copy()
+        # Construir timestamp real combinando fecha + hora (24h)
+        g["timestamp"] = g.apply(lambda r: datetime.combine(r["fecha"].date(), r["time_obj"]), axis=1)
+        g = g.sort_values("timestamp")
+        stamps = list(g["timestamp"])
+        name = g["nombre"].iloc[0] if "nombre" in g.columns and not g.empty else ""
+
+        # Emparejar consecutivos
+        for i in range(0, len(stamps) - 1, 2):
+            entrada_dt = stamps[i]
+            salida_dt = stamps[i + 1]
+            # Si salida es antes, forzar al día siguiente (por seguridad)
+            if salida_dt < entrada_dt:
+                salida_dt = salida_dt + timedelta(days=1)
+
+            duracion_real_min = (salida_dt - entrada_dt).total_seconds() / 60.0
+            expected_min = horas_turno * 60.0
+            diff_min = duracion_real_min - expected_min
+            dentro_tolerancia = abs(diff_min) <= float(tolerancia_min)
+            alerta = ""
+            if not dentro_tolerancia:
+                alerta = (
+                    f"Revisar marcas: duración real {duracion_real_min/60.0:.2f}h "
+                    f"(dif {diff_min:+.0f} min) vs turno {horas_turno}h ±{tolerancia_min}min"
+                )
+
+            # Determinar inicio programado más cercano al timestamp de entrada
+            base = datetime.combine(entrada_dt.date(), datetime.min.time().replace(hour=cambio_h, minute=cambio_m))
+            candidates = [base - timedelta(hours=horas_turno), base, base + timedelta(hours=horas_turno)]
+            start_sched = min(candidates, key=lambda d: abs((entrada_dt - d).total_seconds()))
+            end_sched = start_sched + timedelta(hours=horas_turno)
+
+            # Margen de salida +/- X min alrededor de salida programada
+            if abs((salida_dt - end_sched).total_seconds()) <= margen_min * 60:
+                salida_dt_ajustada = end_sched
+            else:
+                salida_dt_ajustada = salida_dt
+
+            # Turno
+            turno = "Día" if (start_sched.time().hour == cambio_h and start_sched.time().minute == cambio_m) else "Noche"
+
+            # Horas trabajadas: turno fijo
+            horas_trabajadas = float(horas_turno)
+
+            # Horas extra (misma lógica que por hora actual)
+            work_date = entrada_dt.date()
+            es_sabado = datetime.combine(work_date, datetime.min.time()).weekday() == 5
+            hora_limite_extra = 12 if es_sabado else 15
+            if entrada_dt.hour > hora_limite_extra or (entrada_dt.hour == hora_limite_extra and entrada_dt.minute > 10):
+                horas_extra = horas_trabajadas
+            else:
+                # Aproximación simple: si la "salida" (ajustada) pasa el límite, lo que excede cuenta como extra
+                limite_dt = datetime.combine(work_date, datetime.min.time().replace(hour=hora_limite_extra, minute=0))
+                # Si el turno cruza medianoche, mantenemos el criterio histórico: si la entrada es después del límite, todo es extra.
+                if salida_dt_ajustada <= limite_dt:
+                    horas_extra = 0.0
+                else:
+                    horas_extra = (salida_dt_ajustada - max(entrada_dt, limite_dt)).total_seconds() / 3600.0
+                    # No exceder horas totales
+                    horas_extra = max(0.0, min(horas_trabajadas, horas_extra))
+
+            es_feriado_domingo = es_feriado_o_domingo(pd.Timestamp(work_date))
+
+            daily_rows.append({
+                "ID": employee_id,
+                "nombre": name,
+                "fecha": pd.Timestamp(work_date),
+                "horas_trabajadas": horas_trabajadas,
+                "horas_extra": float(horas_extra),
+                "es_feriado_domingo": bool(es_feriado_domingo),
+                "es_seguridad": True,
+                "turno_seguridad": turno,
+                "horas_reales_seguridad": round(duracion_real_min / 60.0, 2),
+                "diferencia_turno_seguridad_min": int(round(diff_min)),
+                "alerta_seguridad": alerta,
+            })
+
+    return pd.DataFrame(daily_rows)
+
+
+def calculate_hours_per_day_mixed(hours_df, security_ids=None, security_config=None):
+    """
+    Calcula horas por día para todos:
+    - No seguridad: usa lógica original (2 registros por día)
+    - Seguridad: empareja registros consecutivos (permite cruzar medianoche)
+    """
+    security_ids = set(str(x).strip() for x in security_ids) if security_ids else set()
+    security_config = security_config or {"horas_turno": 12, "hora_cambio_turno": "07:00", "margen_salida_minutos": 10}
+
+    if not security_ids:
+        df = calculate_hours_per_day(hours_df)
+        if not df.empty:
+            df["es_seguridad"] = False
+            df["turno_seguridad"] = ""
+        return df
+
+    # Separar
+    tmp = hours_df.copy()
+    tmp["ID_str"] = tmp["ID"].astype(str).str.strip()
+    df_sec = tmp[tmp["ID_str"].isin(security_ids)].copy()
+    df_non = tmp[~tmp["ID_str"].isin(security_ids)].copy()
+
+    non = calculate_hours_per_day(df_non.drop(columns=["ID_str"]))
+    if not non.empty:
+        non["es_seguridad"] = False
+        non["turno_seguridad"] = ""
+
+    sec = calculate_hours_per_day_security(df_sec.drop(columns=["ID_str"]), security_ids, security_config)
+
+    if non is None or non.empty:
+        return sec
+    if sec is None or sec.empty:
+        return non
+    return pd.concat([non, sec], ignore_index=True)
+
+
 def get_quincena_periods(daily_hours_df):
     """
     Agrupa las fechas en períodos quincenales (15 días).
@@ -964,7 +1264,8 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
                                  hours_file="Reporte de Asistencia.xlsx",
                                  output_file=None,
                                  quincena_fecha=None,
-                                 prestamos_file: str = DEFAULT_PRESTAMOS_FILE):
+                                 prestamos_file: str = DEFAULT_PRESTAMOS_FILE,
+                                 seguridad_horario_file: str = DEFAULT_SEGURIDAD_HORARIO_FILE):
     """
     Calcula la nómina quincenal para todos los empleados de UNA quincena específica.
     
@@ -989,6 +1290,16 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     except Exception as e:
         print(f"[ERROR] Error al leer {employees_file}: {e}")
         return None
+
+    # Identificar empleados de seguridad (nuevo tipo)
+    security_ids = set()
+    try:
+        for _, emp in employees_df.iterrows():
+            seg_val = get_column_value(emp, ["seguridad", "Seguridad", "empleado_seguridad", "Empleado Seguridad"], default=False)
+            if parse_bool(seg_val):
+                security_ids.add(str(emp["ID"]).strip())
+    except Exception:
+        security_ids = set()
     
     # Leer archivo de horas trabajadas desde el reporte de asistencia
     print(f"\nLeyendo reporte de asistencia desde: {hours_file}")
@@ -998,10 +1309,16 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     except Exception as e:
         print(f"[ERROR] Error al leer {hours_file}: {e}")
         return None
+
+    # Normalizar fecha en hours_df (para quincena y para seguridad)
+    if not pd.api.types.is_datetime64_any_dtype(hours_df["fecha"]):
+        hours_df["fecha"] = pd.to_datetime(hours_df["fecha"], errors="coerce")
+        if hours_df["fecha"].isna().any():
+            hours_df["fecha"] = pd.to_datetime(hours_df["fecha"], format="%d/%m/%Y", errors="coerce")
     
     # Validar que cada empleado tenga exactamente 2 registros por día
     print("\nValidando registros de asistencia...")
-    errors = validate_attendance_records(hours_df)
+    errors = validate_attendance_records(hours_df, security_ids=security_ids)
     
     if errors:
         print("\n" + "="*80)
@@ -1012,27 +1329,16 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         print("\n" + "="*80)
         return None
     
-    print("[OK] Todos los registros son validos (2 registros por empleado por dia)")
-    
-    # Calcular horas trabajadas por día
-    print("\nCalculando horas trabajadas por dia...")
-    daily_hours_df = calculate_hours_per_day(hours_df)
-    print(f"[OK] Horas calculadas para {len(daily_hours_df)} dias")
-    
-    # Agrupar en períodos quincenales
-    print("\nAgrupando en períodos quincenales...")
-    daily_hours_df = get_quincena_periods(daily_hours_df)
-    
-    # Determinar qué quincena calcular
+    print("[OK] Todos los registros son validos")
+
+    # Determinar qué quincena calcular (usar hours_df para poder cargar config de seguridad antes del cálculo diario)
     if quincena_fecha is None:
-        # Usar la quincena más reciente (la última fecha en los datos)
-        fecha_maxima = daily_hours_df['fecha'].max()
+        fecha_maxima = hours_df["fecha"].max()
         quincena_fecha = fecha_maxima
         print(f"Calculando nómina para la quincena más reciente (fecha de referencia: {quincena_fecha.strftime('%d/%m/%Y')})")
     else:
-        # Convertir quincena_fecha a datetime si es string
         if isinstance(quincena_fecha, str):
-            quincena_fecha = pd.to_datetime(quincena_fecha, format='%d/%m/%Y', errors='coerce')
+            quincena_fecha = pd.to_datetime(quincena_fecha, format="%d/%m/%Y", errors="coerce")
         elif not isinstance(quincena_fecha, pd.Timestamp):
             quincena_fecha = pd.to_datetime(quincena_fecha)
         print(f"Calculando nómina para quincena que contiene la fecha: {quincena_fecha.strftime('%d/%m/%Y')}")
@@ -1058,6 +1364,18 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         else:
             siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
             fecha_pago = siguiente_mes - timedelta(days=1)
+
+    # Leer configuración de seguridad vigente para esta quincena
+    seguridad_cfg = leer_seguridad_config(fecha_pago, seguridad_horario_file)
+
+    # Calcular horas trabajadas por día (incluye lógica especial para seguridad)
+    print("\nCalculando horas trabajadas por dia...")
+    daily_hours_df = calculate_hours_per_day_mixed(hours_df, security_ids=security_ids, security_config=seguridad_cfg)
+    print(f"[OK] Horas calculadas para {len(daily_hours_df)} dias")
+
+    # Agrupar en períodos quincenales
+    print("\nAgrupando en períodos quincenales...")
+    daily_hours_df = get_quincena_periods(daily_hours_df)
     
     # Filtrar solo los datos de la quincena objetivo
     daily_hours_df = daily_hours_df[daily_hours_df['quincena_inicio'] == quincena_inicio_target]
@@ -1092,6 +1410,11 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             ['Empleado por contrato', 'empleado_por_contrato', 'empleado por contrato'],
             default=False
         )
+        seguridad_val = get_column_value(
+            emp,
+            ['seguridad', 'Seguridad', 'empleado_seguridad', 'Empleado Seguridad'],
+            default=False
+        )
         isl_val = get_column_value(emp, ['ISL', 'isl', 'Impuesto sobre la renta'], default=0)
         try:
             isl_val = float(isl_val) if pd.notna(isl_val) else 0.0
@@ -1102,6 +1425,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'nombre': emp['nombre'],
             'salario_fijo': bool(emp.get('salario_fijo', False)),
             'empleado_fijo': bool(emp.get('empleado_fijo', False)),
+            'seguridad': parse_bool(seguridad_val),
             'salario_minimo': float(emp.get('salario_minimo', 0)) if pd.notna(emp.get('salario_minimo')) else 0.0,
             'salario': float(emp['salario']) if pd.notna(emp['salario']) else 0.0,
             'cargo': emp.get('cargo', ''),
@@ -1145,13 +1469,14 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         bono_horas_extra = 0.0
         
         # Calcular pago según el tipo de empleado
-        if emp_info['salario_fijo']:
+        force_hourly = bool(emp_info.get('seguridad', False))
+        if emp_info['salario_fijo'] and not force_hourly:
             # Empleado con salario fijo: recibe el mismo salario sin importar horas (no recibe pago extra)
             pago_quincenal = emp_info['salario'] / 2  # Salario mensual dividido en 2 quincenas
             pago_extra = 0.0  # Los empleados con salario fijo no reciben pago extra
             pago_feriado_domingo = 0.0  # Los empleados con salario fijo no reciben pago extra por feriados/domingos
             tipo_pago = "Salario Fijo"
-        elif emp_info['empleado_fijo']:
+        elif emp_info['empleado_fijo'] and not force_hourly:
             # Empleado fijo con sueldo mínimo: cobra salario mínimo garantizado + bono por horas extra
             salario_minimo = emp_info['salario_minimo']
             salario_por_hora = emp_info['salario']
@@ -1243,7 +1568,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             pago_feriado_domingo = salario_hora_feriado_domingo * horas_feriado_domingo
             
             pago_quincenal = pago_normal + pago_extra + pago_feriado_domingo
-            tipo_pago = "Por horas"
+            tipo_pago = "Seguridad (Por horas)" if force_hourly else "Por horas"
         
         # Calcular descuentos por contrato
         seguro_social = 0.0
@@ -1282,6 +1607,32 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
 
         total_descuentos = total_descuentos_base + descuento_prestamo
 
+        # Resumen de turnos de seguridad (si aplica)
+        turnos_dia = 0
+        turnos_noche = 0
+        alerta_seguridad = ""
+        horas_reales_seguridad = ""
+        dif_turno_min = ""
+        if emp_info.get("seguridad", False) and "turno_seguridad" in group.columns:
+            turnos_dia = int((group["turno_seguridad"].astype(str).str.strip() == "Día").sum())
+            turnos_noche = int((group["turno_seguridad"].astype(str).str.strip() == "Noche").sum())
+            # Si hay alertas en la quincena, concatenarlas (únicas)
+            if "alerta_seguridad" in group.columns:
+                alerts = [a for a in group["alerta_seguridad"].astype(str).tolist() if str(a).strip()]
+                if alerts:
+                    uniq = list(dict.fromkeys(alerts))
+                    alerta_seguridad = " | ".join(uniq[:3]) + (" | ..." if len(uniq) > 3 else "")
+            if "horas_reales_seguridad" in group.columns:
+                try:
+                    horas_reales_seguridad = round(float(group["horas_reales_seguridad"].mean()), 2)
+                except Exception:
+                    horas_reales_seguridad = ""
+            if "diferencia_turno_seguridad_min" in group.columns:
+                try:
+                    dif_turno_min = int(round(float(group["diferencia_turno_seguridad_min"].mean())))
+                except Exception:
+                    dif_turno_min = ""
+
         # Preparar datos para el resultado
         resultado = {
             'ID': employee_id,
@@ -1290,6 +1641,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Tipo': tipo_pago,
             'Salario Fijo': 'Sí' if emp_info['salario_fijo'] else 'No',
             'Empleado Fijo': 'Sí' if emp_info['empleado_fijo'] else 'No',
+            'Seguridad': 'Sí' if emp_info.get('seguridad', False) else 'No',
             'Empleado por contrato': 'Sí' if emp_info['empleado_por_contrato'] else 'No',
             'Salario Base': emp_info['salario'],
             'Quincena Inicio': quincena_inicio.strftime('%d/%m/%Y'),
@@ -1298,6 +1650,19 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Horas Extra (después 3 PM)': round(total_horas_extra, 2),
             'Pago Extra (25% adicional)': round(pago_extra, 2),
             'Pago Quincenal': round(pago_quincenal, 2),
+            # Config de seguridad (para auditoría en el archivo de nómina)
+            'Horas Turno Seguridad': (seguridad_cfg.get('horas_turno') if emp_info.get('seguridad', False) else ''),
+            'Hora Cambio Turno Seguridad': (seguridad_cfg.get('hora_cambio_turno') if emp_info.get('seguridad', False) else ''),
+            'Margen Salida Seguridad (min)': (seguridad_cfg.get('margen_salida_minutos') if emp_info.get('seguridad', False) else ''),
+            'Tolerancia Turno Seguridad (min)': (seguridad_cfg.get('tolerancia_turno_minutos') if emp_info.get('seguridad', False) else ''),
+            'Turnos Seguridad Día': (turnos_dia if emp_info.get('seguridad', False) else ''),
+            'Turnos Seguridad Noche': (turnos_noche if emp_info.get('seguridad', False) else ''),
+            'Total Turnos Seguridad': ((turnos_dia + turnos_noche) if emp_info.get('seguridad', False) else ''),
+            'Empleados Seguridad Turno Día': (seguridad_cfg.get('empleados_turno_dia') if emp_info.get('seguridad', False) else ''),
+            'Empleados Seguridad Turno Noche': (seguridad_cfg.get('empleados_turno_noche') if emp_info.get('seguridad', False) else ''),
+            'Horas Reales Seguridad (prom)': (horas_reales_seguridad if emp_info.get('seguridad', False) else ''),
+            'Dif Turno Seguridad (min, prom)': (dif_turno_min if emp_info.get('seguridad', False) else ''),
+            'Alerta Seguridad': (alerta_seguridad if emp_info.get('seguridad', False) else ''),
             'Seguro Social (9.75%)': round(seguro_social, 2),
             'Seguro Educativo (1.25%)': round(seguro_educativo, 2),
             'ISL': round(descuento_isl, 2),
@@ -1373,12 +1738,16 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     print("="*80)
     
     # Definir orden de columnas (sin "Total Pago a Empleados" que va al final)
-    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Empleado por contrato',
+    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Seguridad', 'Empleado por contrato',
                 'Salario Base', 
                 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
                 'Total Horas Trabajadas', 'Horas Extra (después 3 PM)', 
                 'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
                 'Pago Feriado/Domingo (50% adicional)', 
+                'Horas Turno Seguridad', 'Hora Cambio Turno Seguridad', 'Margen Salida Seguridad (min)',
+                'Tolerancia Turno Seguridad (min)', 'Horas Reales Seguridad (prom)', 'Dif Turno Seguridad (min, prom)', 'Alerta Seguridad',
+                'Turnos Seguridad Día', 'Turnos Seguridad Noche', 'Total Turnos Seguridad',
+                'Empleados Seguridad Turno Día', 'Empleados Seguridad Turno Noche',
                 'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISL', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
                 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
     
@@ -1524,6 +1893,7 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     tipo_de_cuenta = input('Tipo de cuenta: ').strip()
     salario_fijo = input('Salario Fijo (S/N) - Cobra lo mismo sin importar horas: ').strip().upper()
     empleado_fijo = input('Empleado Fijo (S/N) - Tiene sueldo mínimo + bono por horas extra: ').strip().upper()
+    seguridad_str = input('Seguridad (S/N) - Turno fijo (ej: 12 horas): ').strip().upper()
     empleado_contrato = input('Empleado por contrato (S/N): ').strip().upper()
     isl_str = input('ISL (Impuesto sobre la renta): ').strip()
     
@@ -1539,6 +1909,9 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     
     # Convertir empleado_fijo a booleano
     empleado_fijo_bool = (empleado_fijo == 'S')
+
+    # Convertir seguridad a booleano
+    seguridad_bool = (seguridad_str == 'S')
 
     # Convertir empleado_por_contrato a booleano
     empleado_contrato_bool = (empleado_contrato == 'S')
@@ -1556,6 +1929,11 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     # Validar que no sean ambos tipos a la vez
     if salario_fijo_bool and empleado_fijo_bool:
         print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+        return None
+
+    # Validar seguridad: debe comportarse como empleado por horas (no salario fijo ni empleado fijo)
+    if seguridad_bool and (salario_fijo_bool or empleado_fijo_bool):
+        print("[ERROR] Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
         return None
     
     # Si es empleado_fijo, solicitar salario_minimo
@@ -1591,6 +1969,7 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
         'tipo_de_cuenta': [tipo_de_cuenta],
         'salario_fijo': [1 if salario_fijo_bool else 0],
         'empleado_fijo': [1 if empleado_fijo_bool else 0],
+        'seguridad': ['Sí' if seguridad_bool else 'No'],
         'salario_minimo': [salario_minimo if empleado_fijo_bool else 0],
         'Empleado por contrato': ['Sí' if empleado_contrato_bool else 'No'],
         'ISL': [isl]
@@ -1743,11 +2122,13 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     print(f"  Tipo de cuenta: {empleado_actual.get('tipo_de_cuenta', 'N/A')}")
     salario_fijo_actual = bool(empleado_actual.get('salario_fijo', False))
     empleado_fijo_actual = bool(empleado_actual.get('empleado_fijo', False))
+    seguridad_actual = str(empleado_actual.get('seguridad', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
     salario_minimo_actual = empleado_actual.get('salario_minimo', 0) if pd.notna(empleado_actual.get('salario_minimo')) else 0
     empleado_contrato_actual = str(empleado_actual.get('Empleado por contrato', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
     isl_actual = empleado_actual.get('ISL', 0) if pd.notna(empleado_actual.get('ISL')) else 0
     print(f"  Salario Fijo: {'Sí' if salario_fijo_actual else 'No'}")
     print(f"  Empleado Fijo: {'Sí' if empleado_fijo_actual else 'No'}")
+    print(f"  Seguridad: {'Sí' if seguridad_actual else 'No'}")
     print(f"  Empleado por contrato: {'Sí' if empleado_contrato_actual else 'No'}")
     print(f"  ISL: {isl_actual}")
     if empleado_fijo_actual:
@@ -1798,6 +2179,12 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     else:
         empleado_fijo_bool = (empleado_fijo_str == 'S')
     
+    seguridad_str = input(f'Seguridad (S/N) [{"S" if seguridad_actual else "N"}]: ').strip().upper()
+    if not seguridad_str:
+        seguridad_bool = seguridad_actual
+    else:
+        seguridad_bool = (seguridad_str == 'S')
+
     empleado_contrato_str = input(f'Empleado por contrato (S/N) [{"S" if empleado_contrato_actual else "N"}]: ').strip().upper()
     if not empleado_contrato_str:
         empleado_contrato_bool = empleado_contrato_actual
@@ -1817,6 +2204,10 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     # Validar que no sean ambos tipos a la vez
     if salario_fijo_bool and empleado_fijo_bool:
         print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+        return None
+
+    if seguridad_bool and (salario_fijo_bool or empleado_fijo_bool):
+        print("[ERROR] Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
         return None
     
     # Si es empleado_fijo, solicitar salario_minimo
@@ -1844,6 +2235,7 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     employees_df.loc[indice, 'tipo_de_cuenta'] = tipo_de_cuenta
     employees_df.loc[indice, 'salario_fijo'] = 1 if salario_fijo_bool else 0
     employees_df.loc[indice, 'empleado_fijo'] = 1 if empleado_fijo_bool else 0
+    employees_df.loc[indice, 'seguridad'] = 'Sí' if seguridad_bool else 'No'
     employees_df.loc[indice, 'salario_minimo'] = salario_minimo if empleado_fijo_bool else 0
     employees_df.loc[indice, 'Empleado por contrato'] = 'Sí' if empleado_contrato_bool else 'No'
     employees_df.loc[indice, 'ISL'] = isl if empleado_contrato_bool else 0

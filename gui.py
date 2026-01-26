@@ -44,6 +44,8 @@ class GruvboxColors:
     YELLOW = '#fabd2f'       # yellow
     ORANGE = '#fe8019'       # orange
     RED = '#fb4934'          # red
+    # Botones "Salir" (menos saturado, tipo vino)
+    EXIT = '#c06c84'
     PURPLE = '#d3869b'       # purple
     
     # Neutral
@@ -70,6 +72,8 @@ class AquaColors:
     YELLOW = '#A6E3E9'
     ORANGE = '#71C9CE'
     RED = '#d9534f'          # rojo para Salir (contraste sobre claro)
+    # Botones "Salir" (menos saturado, tipo vino)
+    EXIT = '#c06c84'
     PURPLE = '#71C9CE'
 
     GRAY = '#666666'
@@ -290,7 +294,10 @@ class NominaApp(QMainWindow):
         main_layout.addWidget(theme_group)
 
         # Botones principales
-        button_layout = QVBoxLayout()
+        self._buttons_container = QWidget()
+        self._buttons_container.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+
+        button_layout = QVBoxLayout(self._buttons_container)
         button_layout.setAlignment(Qt.AlignCenter)
         button_layout.setSpacing(15)
 
@@ -309,11 +316,29 @@ class NominaApp(QMainWindow):
             self.main_buttons.append((btn, text == "Salir"))
             button_layout.addWidget(btn)
 
-        main_layout.addLayout(button_layout)
+        main_layout.addWidget(self._buttons_container, alignment=Qt.AlignCenter)
         self._apply_theme_to_widgets()
+        self._update_main_buttons_container_width()
 
         # Espaciador para centrar verticalmente
         main_layout.addStretch()
+
+    def _update_main_buttons_container_width(self):
+        """
+        Mantiene los botones más angostos sin perder adaptabilidad.
+        Ajusta el ancho del contenedor en función del tamaño de la ventana.
+        """
+        try:
+            # 55% del ancho actual, con límites para pantallas pequeñas/grandes
+            target = int(self.width() * 0.55)
+            target = max(300, min(target, 560))
+            self._buttons_container.setMaximumWidth(target)
+        except Exception:
+            pass
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_main_buttons_container_width()
 
     def _on_theme_changed(self):
         global CURRENT_THEME
@@ -342,26 +367,49 @@ class NominaApp(QMainWindow):
         )
         for btn, is_exit in self.main_buttons:
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            color = C.RED if is_exit else C.AQUA
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {color};
-                    color: {C.BUTTON_TEXT};
-                    border: 2px solid {color};
-                    border-radius: 8px;
-                    padding: 10px 20px;
-                    font-weight: bold;
-                    font-size: 11pt;
-                }}
-                QPushButton:hover {{
-                    background-color: {C.BG_LIGHT};
-                    color: {color};
-                    border-color: {color};
-                }}
-                QPushButton:pressed {{
-                    background-color: {C.BG_LIGHTER};
-                }}
-            """)
+            if is_exit:
+                exit_color = getattr(C, "EXIT", C.RED)
+                # Normal: mismo estilo "hover" (fondo neutro, texto/borde vino)
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {C.BG_LIGHT};
+                        color: {exit_color};
+                        border: 2px solid {exit_color};
+                        border-radius: 8px;
+                        padding: 10px 20px;
+                        font-weight: bold;
+                        font-size: 11pt;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {C.BG_LIGHTER};
+                        color: {exit_color};
+                        border-color: {exit_color};
+                    }}
+                    QPushButton:pressed {{
+                        background-color: {C.BG_LIGHTER};
+                    }}
+                """)
+            else:
+                color = C.AQUA
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {color};
+                        color: {C.BUTTON_TEXT};
+                        border: 2px solid {color};
+                        border-radius: 8px;
+                        padding: 10px 20px;
+                        font-weight: bold;
+                        font-size: 11pt;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {C.BG_LIGHT};
+                        color: {color};
+                        border-color: {color};
+                    }}
+                    QPushButton:pressed {{
+                        background-color: {C.BG_LIGHTER};
+                    }}
+                """)
 
     def open_calculate_payroll(self):
         """Abre la ventana para calcular nómina"""
@@ -429,24 +477,39 @@ basándose en las horas trabajadas registradas.
 FUNCIONALIDADES:
 • Calcular nómina quincenal automáticamente
 • Gestionar empleados (agregar, eliminar, modificar)
-• Gestionar préstamos (crear, pausar, ver pagos, cierre automático al saldar)
+• Gestionar préstamos:
+  - Crear préstamo y definir cuota quincenal
+  - Pausar / reanudar
+  - Registrar pago manual
+  - Ver pagos (NÓMINA / MANUAL) con bitácora
+  - Cierre automático al saldar
+• Empleados de Seguridad (turnos):
+  - Turno configurable (por defecto 12h)
+  - Soporta turnos que cruzan medianoche (entrada/salida se emparejan consecutivamente)
+  - Margen de salida configurable (± minutos)
+  - Tolerancia de duración configurable (genera alertas si las marcas no cuadran)
 • Cálculo automático de horas extra (25% adicional después de las 3 PM)
 • Cálculo automático de pago por feriados/domingos (50% adicional)
+• Ventanas adaptables a la resolución de la pantalla
 
 ARCHIVOS REQUERIDOS:
 • employees_information.xlsx - Información de empleados
 • Reporte de Asistencia.xlsx - Reporte de asistencia del escáner biométrico
 • prestamos.xlsx - Control de préstamos y bitácora de pagos (se crea automáticamente si no existe)
+• seguridad_horario.xlsx - Configuración de turnos de seguridad (se crea automáticamente si no existe)
 
 TIPOS DE EMPLEADOS:
 • Salario Fijo: Cobran lo mismo sin importar las horas trabajadas
 • Empleado Fijo: Tienen un sueldo mínimo garantizado + bono por horas extra
   si trabajan más de las horas requeridas para ese sueldo
 • Por Horas: Reciben pago según horas trabajadas con bonos por horas extra
+• Seguridad: Cobra como “Por Horas”, pero con turnos configurables (ej. 12h)
 
 IMPORTANTE:
 • Se requiere exactamente 2 registros por día por empleado (entrada y salida)
+  (Excepto Seguridad: puede cruzar medianoche y se valida por pares de registros)
 • Los empleados fijos no pueden ser ambos tipos a la vez
+• Seguridad no puede ser “Salario Fijo” ni “Empleado Fijo”
         """
         QMessageBox.information(self, "Información del Sistema", info_text)
 
@@ -1201,6 +1264,7 @@ class AddEmployeeWindow(QDialog):
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
             ("Salario Fijo (S/N):", "salario_fijo"),
             ("Empleado Fijo (S/N):", "empleado_fijo"),
+            ("Seguridad (S/N):", "seguridad"),
             ("Salario Mínimo (mensual):", "salario_minimo"),
             ("Empleado por contrato (S/N):", "empleado_por_contrato"),
             ("ISL (Impuesto sobre la renta):", "isl")
@@ -1276,6 +1340,8 @@ class AddEmployeeWindow(QDialog):
         inputs.append('S' if salario_fijo_val == 'S' else 'N')
         empleado_fijo_val = self.vars['empleado_fijo'].text().strip().upper()
         inputs.append('S' if empleado_fijo_val == 'S' else 'N')
+        seguridad_val = self.vars['seguridad'].text().strip().upper()
+        inputs.append('S' if seguridad_val == 'S' else 'N')
         empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
         inputs.append('S' if empleado_contrato_val == 'S' else 'N')
         isl_val = self.vars['isl'].text().strip()
@@ -1283,6 +1349,10 @@ class AddEmployeeWindow(QDialog):
         
         if salario_fijo_val == 'S' and empleado_fijo_val == 'S':
             QMessageBox.critical(self, "Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+            return
+
+        if seguridad_val == 'S' and (salario_fijo_val == 'S' or empleado_fijo_val == 'S'):
+            QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
             return
         
         if empleado_fijo_val == 'S':
@@ -1412,6 +1482,7 @@ class ModifyEmployeeWindow(QDialog):
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
             ("Salario Fijo (S/N):", "salario_fijo"),
             ("Empleado Fijo (S/N):", "empleado_fijo"),
+            ("Seguridad (S/N):", "seguridad"),
             ("Salario Mínimo (mensual):", "salario_minimo"),
             ("Empleado por contrato (S/N):", "empleado_por_contrato"),
             ("ISL (Impuesto sobre la renta):", "isl")
@@ -1507,11 +1578,13 @@ class ModifyEmployeeWindow(QDialog):
             self.vars['tipo_de_cuenta'].setText(str(emp.get('tipo_de_cuenta', '')))
             salario_fijo_val = bool(emp.get('salario_fijo', False))
             empleado_fijo_val = bool(emp.get('empleado_fijo', False))
+            seguridad_val = str(emp.get('seguridad', 'No')).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1']
             salario_minimo_val = emp.get('salario_minimo', 0) if pd.notna(emp.get('salario_minimo')) else 0
             empleado_contrato_val = emp.get('Empleado por contrato', 'No')
             isl_val = emp.get('ISL', 0) if pd.notna(emp.get('ISL')) else 0
             self.vars['salario_fijo'].setText('S' if salario_fijo_val else 'N')
             self.vars['empleado_fijo'].setText('S' if empleado_fijo_val else 'N')
+            self.vars['seguridad'].setText('S' if seguridad_val else 'N')
             self.vars['salario_minimo'].setText(str(salario_minimo_val))
             self.vars['empleado_por_contrato'].setText('S' if str(empleado_contrato_val).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1'] else 'N')
             self.vars['isl'].setText(str(isl_val))
@@ -1528,6 +1601,13 @@ class ModifyEmployeeWindow(QDialog):
         employee_id = self.id_edit.text().strip()
         if not employee_id:
             QMessageBox.critical(self, "Error", "Debe ingresar un ID")
+            return
+
+        salario_fijo_val = self.vars['salario_fijo'].text().strip().upper()
+        empleado_fijo_val = self.vars['empleado_fijo'].text().strip().upper()
+        seguridad_val = self.vars.get('seguridad').text().strip().upper() if 'seguridad' in self.vars else 'N'
+        if seguridad_val == 'S' and (salario_fijo_val == 'S' or empleado_fijo_val == 'S'):
+            QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
             return
 
         empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
@@ -1558,6 +1638,7 @@ class ModifyEmployeeWindow(QDialog):
             self.vars['tipo_de_cuenta'].text().strip() or '',
             self.vars['salario_fijo'].text().strip().upper() or '',
             self.vars['empleado_fijo'].text().strip().upper() or '',
+            self.vars['seguridad'].text().strip().upper() or '',
             self.vars['empleado_por_contrato'].text().strip().upper() or '',
             self.vars['isl'].text().strip() or '',
             self.vars['salario_minimo'].text().strip() or ''
@@ -1610,12 +1691,21 @@ class DeleteEmployeeWindow(QDialog):
         title.setStyleSheet(f"font-size: 18pt; font-weight: bold; color: {get_colors().AQUA}; margin: 10px;")
         layout.addWidget(title)
         
-        # ID
-        id_label = QLabel("ID del Empleado:")
-        layout.addWidget(id_label)
-        
-        self.id_edit = QLineEdit()
-        layout.addWidget(self.id_edit)
+        # Selección de empleado
+        emp_label = QLabel("Seleccione el empleado:")
+        layout.addWidget(emp_label)
+
+        self.employee_combo = QComboBox()
+        self.employee_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self.employee_combo)
+
+        self.employee_info = QLabel("")
+        self.employee_info.setAlignment(Qt.AlignCenter)
+        self.employee_info.setStyleSheet(f"font-size: 11pt; color: {get_colors().FG_DARK};")
+        layout.addWidget(self.employee_info)
+
+        self._load_employees()
+        self.employee_combo.currentIndexChanged.connect(self._update_info)
         
         # Botones
         button_layout = QHBoxLayout()
@@ -1658,12 +1748,58 @@ class DeleteEmployeeWindow(QDialog):
         button_layout.addWidget(cancel_btn)
         
         layout.addLayout(button_layout)
+
+    def _load_employees(self):
+        self.employee_combo.clear()
+        try:
+            df = leer_empleados_normalizado()
+            if df is None or df.empty:
+                self.employee_combo.addItem("No hay empleados registrados", "")
+                self.employee_combo.setEnabled(False)
+                self.employee_info.setText("")
+                return
+
+            # Ordenar por nombre si existe
+            if "nombre" in df.columns:
+                df = df.sort_values("nombre")
+
+            for _, row in df.iterrows():
+                emp_id = str(row.get("ID", "")).strip()
+                nombre = str(row.get("nombre", "")).strip()
+                cargo = str(row.get("cargo", "")).strip()
+                if emp_id:
+                    label = f"{emp_id} - {nombre}" + (f" ({cargo})" if cargo else "")
+                    self.employee_combo.addItem(label, emp_id)
+
+            self.employee_combo.setEnabled(True)
+            self._update_info()
+        except Exception:
+            self.employee_combo.addItem("No se pudieron cargar empleados", "")
+            self.employee_combo.setEnabled(False)
+            self.employee_info.setText("")
+
+    def _update_info(self):
+        emp_id = str(self.employee_combo.currentData() or "").strip()
+        if not emp_id:
+            self.employee_info.setText("")
+            return
+        self.employee_info.setText(f"ID seleccionado: {emp_id}")
     
     def delete_employee(self):
         """Elimina el empleado"""
-        employee_id = self.id_edit.text().strip()
+        employee_id = str(self.employee_combo.currentData() or "").strip()
+        employee_label = self.employee_combo.currentText()
         if not employee_id:
-            QMessageBox.critical(self, "Error", "Debe ingresar un ID")
+            QMessageBox.critical(self, "Error", "Debe seleccionar un empleado")
+            return
+
+        resp = QMessageBox.question(
+            self,
+            "Confirmar eliminación",
+            f"¿Está seguro de eliminar este empleado?\n\n{employee_label}",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if resp != QMessageBox.Yes:
             return
         
         import sys

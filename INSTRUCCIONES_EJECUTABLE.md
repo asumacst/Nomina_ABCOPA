@@ -21,7 +21,9 @@ El ejecutable se encuentra en la carpeta `dist` con el nombre:
 2. **Preparar los archivos necesarios**
    - Asegúrate de tener los siguientes archivos Excel en la misma carpeta que el ejecutable:
      - `employees_information.xlsx` - Archivo con la información de los empleados
-     - `hours_worked.xlsx` - Archivo con los registros de asistencia
+     - `Reporte de Asistencia.xlsx` - Archivo con los registros de asistencia (biométrico)
+     - `prestamos.xlsx` - Control de préstamos (se crea automáticamente si no existe)
+     - `seguridad_horario.xlsx` - Configuración de turnos de seguridad (se crea automáticamente si no existe)
 
 3. **Ejecutar el programa**
    - Haz doble clic en `NominaABCOPA.exe`
@@ -30,6 +32,7 @@ El ejecutable se encuentra en la carpeta `dist` con el nombre:
 4. **Usar el sistema**
    - **Calcular Nómina Quincenal**: Selecciona los archivos y calcula la nómina
    - **Gestionar Empleados**: Agrega, modifica o elimina empleados
+   - **Gestionar Préstamos**: Crea préstamos, registra pagos manuales, revisa pagos
    - **Ver Información**: Consulta información sobre el sistema
 
 ## 📋 Estructura de Archivos Recomendada
@@ -38,7 +41,9 @@ El ejecutable se encuentra en la carpeta `dist` con el nombre:
 Carpeta del Ejecutable/
 ├── NominaABCOPA.exe
 ├── employees_information.xlsx
-└── hours_worked.xlsx
+├── Reporte de Asistencia.xlsx
+├── prestamos.xlsx
+└── seguridad_horario.xlsx
 ```
 
 ## ⚠️ Notas Importantes
@@ -79,13 +84,29 @@ Debe contener las siguientes columnas:
 - n_de_cuenta
 - banco
 - tipo_de_cuenta
-- fijo (True/False o Sí/No)
+- salario_fijo (0/1)
+- empleado_fijo (0/1)
+- salario_minimo
+- Empleado por contrato (Sí/No)
+- ISL
+- seguridad (Sí/No)
 
-### hours_worked.xlsx
+### Reporte de Asistencia.xlsx
 Debe contener las siguientes columnas:
 - ID
 - nombre
 - fecha (formato: DD/MM/YYYY)
 - hora (formato: HH:MM)
 
-**Importante**: Cada empleado debe tener exactamente 2 registros por día (entrada y salida).
+**Importante**:
+- Cada empleado debe tener exactamente 2 registros por día (entrada y salida).
+- **Seguridad**: puede cruzar medianoche; se validan por pares de registros.
+
+### prestamos.xlsx (auto-creado)
+- Hoja `Prestamos`: estado/saldo/cuota/estado del préstamo
+- Hoja `PagosPrestamo`: bitácora de pagos con tipo `NOMINA` / `MANUAL`
+
+### seguridad_horario.xlsx (auto-creado)
+- Hoja `Config`: controla turnos y tolerancias para Seguridad:
+  - `horas_turno`, `hora_cambio_turno`, `margen_salida_minutos`, `tolerancia_turno_minutos`
+  - `vigente_desde` para cambios por fecha

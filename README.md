@@ -41,6 +41,8 @@ python gui.py
 - Opción de especificar una fecha de referencia (o usar la más reciente)
 - Muestra mensajes detallados del proceso de cálculo
 - Genera automáticamente el archivo Excel con la nómina calculada
+- Incluye deducciones automáticas (Seguro Social/Educativo/ISL si aplica) y préstamos
+- Para Seguridad, calcula turnos según configuración y genera alertas si hay inconsistencias
 
 ### 2. Gestionar Empleados
 
@@ -54,6 +56,7 @@ python gui.py
 - Formulario completo para agregar nuevos empleados
 - Generación automática de ID si no se especifica
 - Validación de campos requeridos
+- Permite marcar empleados como **Seguridad (S/N)**
 
 **Modificar Empleado:**
 
@@ -63,10 +66,31 @@ python gui.py
 
 **Eliminar Empleado:**
 
-- Eliminar empleados por ID
+- Eliminar empleados seleccionándolos desde una lista (ID - Nombre)
 - Confirmación antes de eliminar
 
-### 3. Ver Información
+### 3. Gestionar Préstamos
+
+- El sistema crea `prestamos.xlsx` si no existe
+- Permite:
+  - Crear préstamo (monto, cuota quincenal, fecha inicio)
+  - Pausar / reanudar
+  - Cerrar préstamo (opción de condonar saldo)
+  - Registrar **pagos manuales** (se registran en la bitácora)
+  - Ver pagos por préstamo (tipo `NOMINA` / `MANUAL`)
+
+### 4. Empleados de Seguridad (Turnos)
+
+- Los empleados marcados como **Seguridad** cobran como “Por Horas”, pero con turnos configurables.
+- Configuración en `seguridad_horario.xlsx` (se crea automáticamente):
+  - `horas_turno` (por defecto 12)
+  - `hora_cambio_turno` (inicio del turno Día)
+  - `margen_salida_minutos` (ajuste de salida ± minutos)
+  - `tolerancia_turno_minutos` (genera alerta si la duración real se sale del rango)
+  - `empleados_turno_dia / empleados_turno_noche` (informativo)
+  - `vigente_desde` para manejar cambios por fecha
+
+### 5. Ver Información
 
 - Muestra información general sobre el sistema
 - Explica las funcionalidades y requisitos
@@ -78,11 +102,16 @@ La aplicación requiere los siguientes archivos:
 1. **logo.png**: Logo de ABCOPA (opcional, se mostrará un placeholder si no existe)
 2. **employees_information.xlsx**: Archivo con la información de los empleados
 
-   - Columnas requeridas: ID, nombre, cargo, salario, n_de_cuenta, banco, tipo_de_cuenta, fijo
+   - Columnas usadas por el sistema: `ID`, `nombre`, `cargo`, `salario`, `n_de_cuenta`, `banco`, `tipo_de_cuenta`,
+     `salario_fijo`, `empleado_fijo`, `salario_minimo`, `Empleado por contrato`, `ISL`, `seguridad`
 3. **Reporte de Asistencia.xlsx**: Archivo con los registros de asistencia
 
    - Columnas requeridas: ID, nombre, fecha, hora
    - Debe tener exactamente 2 registros por día por empleado (entrada y salida)
+     - **Excepto Seguridad**: puede cruzar medianoche; se valida por pares de registros
+
+4. **prestamos.xlsx**: Control de préstamos y bitácora de pagos (auto-creado si no existe)
+5. **seguridad_horario.xlsx**: Configuración de turnos de seguridad (auto-creado si no existe)
 
 ## Notas
 
@@ -90,6 +119,7 @@ La aplicación requiere los siguientes archivos:
 - Todos los errores se muestran en mensajes claros
 - Los resultados se guardan automáticamente en archivos Excel
 - La fecha de pago se calcula automáticamente según la quincena
+- La UI se ajusta al tamaño de pantalla (ventanas/botones adaptables)
 
 ## Características
 
