@@ -918,31 +918,22 @@ def calculate_hours_per_day(hours_df):
             # Ordenar por hora
             horas_con_minutos.sort()
             
-            # Determinar cuál es entrada y cuál salida
+            # Determinar cuál es entrada y cuál salida (reporte siempre en formato 24h)
             if len(horas_con_minutos) == 2:
                 h1, m1 = horas_con_minutos[0]
                 h2, m2 = horas_con_minutos[1]
                 
-                # Si ambas son < 12 y la diferencia es >= 2, entonces:
-                # - h2 (mayor) es la entrada (AM)
-                # - h1 (menor) es la salida (PM, se suma 12)
-                # Ejemplo: [3, 7] -> entrada 7 AM, salida 3 PM (15:00)
-                # Ejemplo: [3, 8] -> entrada 8 AM, salida 3 PM (15:00)
-                # Ejemplo: [4, 7] -> entrada 7 AM, salida 4 PM (16:00)
-                # Ejemplo: [5, 7] -> entrada 7 AM, salida 5 PM (17:00)
-                if h1 < 12 and h2 < 12 and (h2 - h1) >= 2:
-                    entrada_hour_final = h2
-                    entrada_minute = m2
-                    salida_hour_final = h1 + 12
-                    salida_minute = m1
-                elif h1 < 12 and h2 >= 12:
-                    # h1 es AM, h2 ya es PM (formato 24h)
+                # Con formato 24h: la hora menor es entrada, la mayor es salida.
+                # - [7, 15] -> entrada 7, salida 15 (día completo)
+                # - [3, 7], [5, 9] -> turnos solo mañana; entrada = h1, salida = h2
+                if h1 < 12 and h2 >= 12:
+                    # h1 AM, h2 PM: entrada = h1, salida = h2
                     entrada_hour_final = h1
                     entrada_minute = m1
                     salida_hour_final = h2
                     salida_minute = m2
                 else:
-                    # Ambas son >= 12 o diferencia pequeña
+                    # Ambas AM o ambas PM: entrada = menor, salida = mayor
                     entrada_hour_final = h1
                     entrada_minute = m1
                     salida_hour_final = h2
@@ -957,11 +948,14 @@ def calculate_hours_per_day(hours_df):
             # - Si llega ANTES de las 7:00 AM: se registra como 7:00 AM (sin importar la hora)
             # - Si llega entre 7:00 y 7:05 AM (incluyente): se registra como 7:00 AM
             # - Después de 7:05 AM: se registra la hora real (para que aplique descuento/retardo)
-            if entrada_hour_final < 7:
-                entrada_hour_final = 7
-                entrada_minute = 0
-            elif entrada_hour_final == 7 and entrada_minute <= 5:
-                entrada_minute = 0
+            # - NO aplicar en turnos solo mañana (entrada y salida < 12): 3-7, 5-9, etc.
+            turno_solo_manana = salida_hour_final < 12
+            if not turno_solo_manana:
+                if entrada_hour_final < 7:
+                    entrada_hour_final = 7
+                    entrada_minute = 0
+                elif entrada_hour_final == 7 and entrada_minute <= 5:
+                    entrada_minute = 0
             
             # Calcular horas extra
             # - Días normales (lunes a viernes): después de las 3 PM / 15:00
@@ -1415,11 +1409,11 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             ['seguridad', 'Seguridad', 'empleado_seguridad', 'Empleado Seguridad'],
             default=False
         )
-        isl_val = get_column_value(emp, ['ISL', 'isl', 'Impuesto sobre la renta'], default=0)
+        islr_val = get_column_value(emp, ['ISLR', 'ISL', 'isl', 'Impuesto sobre la renta'], default=0)
         try:
-            isl_val = float(isl_val) if pd.notna(isl_val) else 0.0
+            islr_val = float(islr_val) if pd.notna(islr_val) else 0.0
         except (TypeError, ValueError):
-            isl_val = 0.0
+            islr_val = 0.0
         # Usar ID como clave principal, pero también nombre como alternativa
         employees_dict[str(emp['ID'])] = {
             'nombre': emp['nombre'],
@@ -1433,7 +1427,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'banco': emp.get('banco', ''),
             'tipo_de_cuenta': emp.get('tipo_de_cuenta', ''),
             'empleado_por_contrato': parse_bool(contrato_val),
-            'isl': isl_val
+            'islr': islr_val
         }
     
     # Calcular nómina por quincena (solo una quincena ahora)
@@ -1573,12 +1567,12 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         # Calcular descuentos por contrato
         seguro_social = 0.0
         seguro_educativo = 0.0
-        descuento_isl = 0.0
+        descuento_islr = 0.0
         if emp_info['empleado_por_contrato']:
             seguro_social = pago_quincenal * 0.0975
             seguro_educativo = pago_quincenal * 0.0125
-            descuento_isl = emp_info['isl']
-        total_descuentos_base = seguro_social + seguro_educativo + descuento_isl
+            descuento_islr = emp_info['islr']
+        total_descuentos_base = seguro_social + seguro_educativo + descuento_islr
 
         # Descuento por préstamos (si aplica). Se capea para no dejar neto negativo.
         descuento_prestamo = 0.0
@@ -1665,7 +1659,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Alerta Seguridad': (alerta_seguridad if emp_info.get('seguridad', False) else ''),
             'Seguro Social (9.75%)': round(seguro_social, 2),
             'Seguro Educativo (1.25%)': round(seguro_educativo, 2),
-            'ISL': round(descuento_isl, 2),
+            'ISLR': round(descuento_islr, 2),
             'Descuento Préstamo': round(descuento_prestamo, 2),
             'Total Descuentos': round(total_descuentos, 2),
             'Total Saldo Préstamo': round(saldo_prestamo_total, 2),
@@ -1748,7 +1742,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
                 'Tolerancia Turno Seguridad (min)', 'Horas Reales Seguridad (prom)', 'Dif Turno Seguridad (min, prom)', 'Alerta Seguridad',
                 'Turnos Seguridad Día', 'Turnos Seguridad Noche', 'Total Turnos Seguridad',
                 'Empleados Seguridad Turno Día', 'Empleados Seguridad Turno Noche',
-                'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISL', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
+                'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISLR', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
                 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
     
     # Solo incluir columnas que existen en el DataFrame
@@ -1777,12 +1771,21 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
 def leer_empleados_normalizado(employees_file="employees_information.xlsx"):
     """
     Lee el archivo de empleados y normaliza los IDs (convierte floats enteros a int).
+    Deja una sola columna de impuesto sobre la renta (ISLR); elimina ISL si existe.
     
     Returns:
         DataFrame con IDs normalizados o None si hay error
     """
     try:
         employees_df = pd.read_excel(employees_file)
+        # Normalizar impuesto sobre la renta: solo ISLR (el código usa ISLR)
+        if 'ISL' in employees_df.columns:
+            if 'ISLR' not in employees_df.columns:
+                employees_df = employees_df.rename(columns={'ISL': 'ISLR'})
+            else:
+                mask = pd.isna(employees_df['ISLR']) & pd.notna(employees_df['ISL'])
+                employees_df.loc[mask, 'ISLR'] = employees_df.loc[mask, 'ISL']
+                employees_df = employees_df.drop(columns=['ISL'])
         # Normalizar IDs: convertir floats enteros a int, pero preservar strings
         if 'ID' in employees_df.columns:
             def normalizar_id_lectura(id_val):
@@ -1895,7 +1898,7 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     empleado_fijo = input('Empleado Fijo (S/N) - Tiene sueldo mínimo + bono por horas extra: ').strip().upper()
     seguridad_str = input('Seguridad (S/N) - Turno fijo (ej: 12 horas): ').strip().upper()
     empleado_contrato = input('Empleado por contrato (S/N): ').strip().upper()
-    isl_str = input('ISL (Impuesto sobre la renta): ').strip()
+    islr_str = input('ISLR (Impuesto sobre la renta): ').strip()
     
     # Validar y convertir salario
     try:
@@ -1916,15 +1919,15 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
     # Convertir empleado_por_contrato a booleano
     empleado_contrato_bool = (empleado_contrato == 'S')
 
-    # Validar y convertir ISL
+    # Validar y convertir ISLR
     if empleado_contrato_bool:
         try:
-            isl = float(isl_str) if isl_str else 0.0
+            islr = float(islr_str) if islr_str else 0.0
         except ValueError:
-            print("[ERROR] El ISL debe ser un número válido")
+            print("[ERROR] El ISLR debe ser un número válido")
             return None
     else:
-        isl = 0.0
+        islr = 0.0
     
     # Validar que no sean ambos tipos a la vez
     if salario_fijo_bool and empleado_fijo_bool:
@@ -1972,7 +1975,7 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
         'seguridad': ['Sí' if seguridad_bool else 'No'],
         'salario_minimo': [salario_minimo if empleado_fijo_bool else 0],
         'Empleado por contrato': ['Sí' if empleado_contrato_bool else 'No'],
-        'ISL': [isl]
+        'ISLR': [islr]
     })
     
     # Concatenar con el DataFrame existente
@@ -1987,7 +1990,9 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
             print(ids_duplicados[['ID', 'nombre']])
             return None
     
-    # Guardar en Excel
+    # Guardar en Excel (solo columna ISLR; eliminar ISL si existiera)
+    if 'ISL' in employees_df.columns:
+        employees_df = employees_df.drop(columns=['ISL'])
     try:
         employees_df.to_excel(employees_file, index=False, engine='openpyxl')
         print(f'\n[OK] Empleado agregado exitosamente con ID: {nuevo_id}')
@@ -2059,7 +2064,9 @@ def eliminar_empleado(employees_file="employees_information.xlsx"):
     id_input_normalizado = str(id_input).strip()
     employees_df = employees_df[ids_normalizados != id_input_normalizado]
     
-    # Guardar en Excel
+    # Guardar en Excel (solo columna ISLR; eliminar ISL si existiera)
+    if 'ISL' in employees_df.columns:
+        employees_df = employees_df.drop(columns=['ISL'])
     try:
         employees_df.to_excel(employees_file, index=False, engine='openpyxl')
         print(f'\n[OK] Empleado eliminado exitosamente')
@@ -2125,12 +2132,12 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     seguridad_actual = str(empleado_actual.get('seguridad', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
     salario_minimo_actual = empleado_actual.get('salario_minimo', 0) if pd.notna(empleado_actual.get('salario_minimo')) else 0
     empleado_contrato_actual = str(empleado_actual.get('Empleado por contrato', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
-    isl_actual = empleado_actual.get('ISL', 0) if pd.notna(empleado_actual.get('ISL')) else 0
+    islr_actual = empleado_actual.get('ISLR', 0) if pd.notna(empleado_actual.get('ISLR')) else 0
     print(f"  Salario Fijo: {'Sí' if salario_fijo_actual else 'No'}")
     print(f"  Empleado Fijo: {'Sí' if empleado_fijo_actual else 'No'}")
     print(f"  Seguridad: {'Sí' if seguridad_actual else 'No'}")
     print(f"  Empleado por contrato: {'Sí' if empleado_contrato_actual else 'No'}")
-    print(f"  ISL: {isl_actual}")
+    print(f"  ISLR: {islr_actual}")
     if empleado_fijo_actual:
         print(f"  Salario Mínimo: {salario_minimo_actual}")
     
@@ -2191,15 +2198,15 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     else:
         empleado_contrato_bool = (empleado_contrato_str == 'S')
 
-    isl_str = input(f'ISL (Impuesto sobre la renta) [{isl_actual}]: ').strip()
-    if isl_str:
+    islr_str = input(f'ISLR (Impuesto sobre la renta) [{islr_actual}]: ').strip()
+    if islr_str:
         try:
-            isl = float(isl_str)
+            islr = float(islr_str)
         except ValueError:
-            print("[ERROR] El ISL debe ser un número válido. Se mantendrá el valor actual.")
-            isl = isl_actual
+            print("[ERROR] El ISLR debe ser un número válido. Se mantendrá el valor actual.")
+            islr = islr_actual
     else:
-        isl = isl_actual
+        islr = islr_actual
 
     # Validar que no sean ambos tipos a la vez
     if salario_fijo_bool and empleado_fijo_bool:
@@ -2238,9 +2245,11 @@ def modificar_empleado(employees_file="employees_information.xlsx"):
     employees_df.loc[indice, 'seguridad'] = 'Sí' if seguridad_bool else 'No'
     employees_df.loc[indice, 'salario_minimo'] = salario_minimo if empleado_fijo_bool else 0
     employees_df.loc[indice, 'Empleado por contrato'] = 'Sí' if empleado_contrato_bool else 'No'
-    employees_df.loc[indice, 'ISL'] = isl if empleado_contrato_bool else 0
+    employees_df.loc[indice, 'ISLR'] = islr if empleado_contrato_bool else 0
     
-    # Guardar en Excel
+    # Guardar en Excel (solo columna ISLR; eliminar ISL si existiera)
+    if 'ISL' in employees_df.columns:
+        employees_df = employees_df.drop(columns=['ISL'])
     try:
         employees_df.to_excel(employees_file, index=False, engine='openpyxl')
         print(f'\n[OK] Empleado modificado exitosamente')

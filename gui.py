@@ -115,6 +115,36 @@ def adjust_window_to_screen(window, width_ratio=0.85, height_ratio=0.85, min_wid
         return
 
 
+def style_danger_button(btn: QPushButton):
+    """
+    Aplica el estilo de botón de acción peligrosa (Eliminar / Salir):
+    - Ancho angosto y consistente
+    - Texto y borde en color vino (EXIT/RED)
+    - Fondo neutro para combinar con el tema actual
+    """
+    C = get_colors()
+    color = getattr(C, "EXIT", C.RED)
+    btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+    btn.setMinimumWidth(160)
+    btn.setMaximumWidth(220)
+    btn.setStyleSheet(f"""
+        QPushButton {{
+            background-color: {C.BG_LIGHT};
+            color: {color};
+            border: 2px solid {color};
+            border-radius: 8px;
+            padding: 8px 18px;
+            font-weight: bold;
+            font-size: 11pt;
+        }}
+        QPushButton:hover {{
+            background-color: {C.BG_LIGHTER};
+            color: {color};
+            border-color: {color};
+        }}
+    """)
+
+
 class GruvboxStyle:
     @staticmethod
     def apply_style(app, theme='gruvbox'):
@@ -549,7 +579,7 @@ class ViewPayrollWindow(QDialog):
                 val = row[col]
                 if pd.isna(val):
                     item_text = ''
-                elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col or 'Seguro' in col or 'ISL' in col or 'Descuento' in col):
+                elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col or 'Seguro' in col or 'ISLR' in col or 'Descuento' in col):
                     item_text = f"${val:,.2f}"
                 else:
                     item_text = str(val)
@@ -638,16 +668,17 @@ class ViewPayrollWindow(QDialog):
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {get_colors().AQUA};
-                color: {get_colors().BUTTON_TEXT};
-                border: 2px solid {get_colors().AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {get_colors().BG_LIGHT};
-                color: {get_colors().AQUA};
+                background-color: {get_colors().BG_LIGHTER};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
             }}
         """)
         button_layout.addWidget(close_btn)
@@ -781,16 +812,17 @@ class CalculatePayrollWindow(QDialog):
         close_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {get_colors().AQUA};
-                color: {get_colors().BUTTON_TEXT};
-                border: 2px solid {get_colors().AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
                 border-radius: 6px;
                 padding: 10px 20px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {get_colors().BG_LIGHT};
-                color: {get_colors().AQUA};
+                background-color: {get_colors().BG_LIGHTER};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
             }}
         """)
         button_layout.addWidget(close_btn)
@@ -1013,30 +1045,52 @@ class ManageEmployeesWindow(QDialog):
             ("Ver Lista de Empleados", self.view_employees),
             ("Agregar Empleado", self.add_employee),
             ("Modificar Empleado", self.modify_employee),
-            ("Eliminar Empleado", self.delete_employee)
+            ("Eliminar Empleado", self.delete_employee),
         ]
         
         for text, command in buttons:
             btn = QPushButton(text)
             btn.clicked.connect(command)
-            btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            # Usar AQUA para todos excepto eliminar (que usa RED)
-            color = get_colors().RED if "Eliminar" in text else get_colors().AQUA
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {color};
-                    color: {get_colors().BUTTON_TEXT};
-                    border: 2px solid {color};
-                    border-radius: 6px;
-                    padding: 12px 25px;
-                    font-size: 12pt;
-                }}
-                QPushButton:hover {{
-                    background-color: {get_colors().BG_LIGHT};
-                    color: {color};
-                }}
-            """)
-            button_layout.addWidget(btn)
+            # Mantener adaptabilidad vertical pero limitar el ancho para que no sean tan largos
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            btn.setMaximumWidth(380)  # similar al ancho visual de los botones de la ventana principal
+            
+            if "Eliminar" in text:
+                # Misma estética que los botones de Cerrar (fondo claro, texto/borde rojo)
+                exit_color = get_colors().EXIT if hasattr(get_colors(), "EXIT") else get_colors().RED
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {get_colors().BG_LIGHT};
+                        color: {exit_color};
+                        border: 2px solid {exit_color};
+                        border-radius: 6px;
+                        padding: 8px 22px;
+                        font-size: 11pt;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {get_colors().BG_LIGHTER};
+                        color: {exit_color};
+                        border-color: {exit_color};
+                    }}
+                """)
+            else:
+                # Botones más angostos (menos padding y fuente ligeramente menor)
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {get_colors().AQUA};
+                        color: {get_colors().BUTTON_TEXT};
+                        border: 2px solid {get_colors().AQUA};
+                        border-radius: 6px;
+                        padding: 8px 22px;
+                        font-size: 11pt;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {get_colors().BG_LIGHT};
+                        color: {get_colors().AQUA};
+                    }}
+                """)
+            
+            button_layout.addWidget(btn, alignment=Qt.AlignCenter)
         
         layout.addLayout(button_layout)
         
@@ -1068,15 +1122,16 @@ class ManageEmployeesWindow(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().BG_LIGHT};
-                color: {get_colors().FG};
-                border: 2px solid {get_colors().BG_LIGHTER};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHTER};
-                border-color: {get_colors().BLUE};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
             }}
         """)
         button_layout.addWidget(close_btn)
@@ -1207,16 +1262,17 @@ class ViewEmployeesWindow(QDialog):
         close_btn.clicked.connect(self.close)
         close_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {get_colors().AQUA};
-                color: {get_colors().BUTTON_TEXT};
-                border: 2px solid {get_colors().AQUA};
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
-                background-color: {get_colors().BG_LIGHT};
-                color: {get_colors().AQUA};
+                background-color: {get_colors().BG_LIGHTER};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
             }}
         """)
         button_layout.addWidget(close_btn)
@@ -1267,7 +1323,7 @@ class AddEmployeeWindow(QDialog):
             ("Seguridad (S/N):", "seguridad"),
             ("Salario Mínimo (mensual):", "salario_minimo"),
             ("Empleado por contrato (S/N):", "empleado_por_contrato"),
-            ("ISL (Impuesto sobre la renta):", "isl")
+            ("ISLR (Impuesto sobre la renta):", "islr")
         ]
         
         for label_text, field_name in fields:
@@ -1344,8 +1400,8 @@ class AddEmployeeWindow(QDialog):
         inputs.append('S' if seguridad_val == 'S' else 'N')
         empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
         inputs.append('S' if empleado_contrato_val == 'S' else 'N')
-        isl_val = self.vars['isl'].text().strip()
-        inputs.append(isl_val if isl_val else '')
+        islr_val = self.vars['islr'].text().strip()
+        inputs.append(islr_val if islr_val else '')
         
         if salario_fijo_val == 'S' and empleado_fijo_val == 'S':
             QMessageBox.critical(self, "Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
@@ -1355,6 +1411,17 @@ class AddEmployeeWindow(QDialog):
             QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
             return
         
+        if empleado_contrato_val == 'S':
+            islr_val = self.vars['islr'].text().strip()
+            if not islr_val:
+                QMessageBox.critical(self, "Error", "El ISLR es obligatorio para empleados por contrato")
+                return
+            try:
+                float(islr_val)
+            except ValueError:
+                QMessageBox.critical(self, "Error", "El ISLR debe ser un número válido")
+                return
+
         if empleado_fijo_val == 'S':
             salario_minimo_val = self.vars['salario_minimo'].text().strip()
             if not salario_minimo_val:
@@ -1369,16 +1436,6 @@ class AddEmployeeWindow(QDialog):
         else:
             inputs.append('')
 
-        if empleado_contrato_val == 'S':
-            if not isl_val:
-                QMessageBox.critical(self, "Error", "El ISL es obligatorio para empleados por contrato")
-                return
-            try:
-                float(isl_val)
-            except ValueError:
-                QMessageBox.critical(self, "Error", "El ISL debe ser un número válido")
-                return
-        
         input_index = [0]
         
         def mock_input(prompt=''):
@@ -1485,7 +1542,7 @@ class ModifyEmployeeWindow(QDialog):
             ("Seguridad (S/N):", "seguridad"),
             ("Salario Mínimo (mensual):", "salario_minimo"),
             ("Empleado por contrato (S/N):", "empleado_por_contrato"),
-            ("ISL (Impuesto sobre la renta):", "isl")
+            ("ISLR (Impuesto sobre la renta):", "islr")
         ]
         
         for label_text, field_name in fields:
@@ -1581,13 +1638,13 @@ class ModifyEmployeeWindow(QDialog):
             seguridad_val = str(emp.get('seguridad', 'No')).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1']
             salario_minimo_val = emp.get('salario_minimo', 0) if pd.notna(emp.get('salario_minimo')) else 0
             empleado_contrato_val = emp.get('Empleado por contrato', 'No')
-            isl_val = emp.get('ISL', 0) if pd.notna(emp.get('ISL')) else 0
+            islr_val = emp.get('ISLR', 0) if pd.notna(emp.get('ISLR')) else 0
             self.vars['salario_fijo'].setText('S' if salario_fijo_val else 'N')
             self.vars['empleado_fijo'].setText('S' if empleado_fijo_val else 'N')
             self.vars['seguridad'].setText('S' if seguridad_val else 'N')
             self.vars['salario_minimo'].setText(str(salario_minimo_val))
             self.vars['empleado_por_contrato'].setText('S' if str(empleado_contrato_val).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1'] else 'N')
-            self.vars['isl'].setText(str(isl_val))
+            self.vars['islr'].setText(str(islr_val))
             
             for entry in self.entries:
                 entry.setEnabled(True)
@@ -1611,15 +1668,15 @@ class ModifyEmployeeWindow(QDialog):
             return
 
         empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
-        isl_val = self.vars['isl'].text().strip()
+        islr_val = self.vars['islr'].text().strip()
         if empleado_contrato_val == 'S':
-            if not isl_val:
-                QMessageBox.critical(self, "Error", "El ISL es obligatorio para empleados por contrato")
+            if not islr_val:
+                QMessageBox.critical(self, "Error", "El ISLR es obligatorio para empleados por contrato")
                 return
             try:
-                float(isl_val)
+                float(islr_val)
             except ValueError:
-                QMessageBox.critical(self, "Error", "El ISL debe ser un número válido")
+                QMessageBox.critical(self, "Error", "El ISLR debe ser un número válido")
                 return
         
         import sys
@@ -1640,7 +1697,7 @@ class ModifyEmployeeWindow(QDialog):
             self.vars['empleado_fijo'].text().strip().upper() or '',
             self.vars['seguridad'].text().strip().upper() or '',
             self.vars['empleado_por_contrato'].text().strip().upper() or '',
-            self.vars['isl'].text().strip() or '',
+            self.vars['islr'].text().strip() or '',
             self.vars['salario_minimo'].text().strip() or ''
         ]
         
@@ -1713,32 +1770,38 @@ class DeleteEmployeeWindow(QDialog):
         
         delete_btn = QPushButton("Eliminar")
         delete_btn.clicked.connect(self.delete_employee)
+        delete_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        delete_btn.setMaximumWidth(220)
+        exit_color = get_colors().EXIT if hasattr(get_colors(), "EXIT") else get_colors().RED
         delete_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {get_colors().RED};
-                color: {get_colors().BUTTON_TEXT};
-                border: 2px solid {get_colors().RED};
+                background-color: {get_colors().BG_LIGHT};
+                color: {exit_color};
+                border: 2px solid {exit_color};
                 border-radius: 6px;
-                padding: 10px 25px;
-                font-size: 12pt;
+                padding: 8px 22px;
+                font-size: 11pt;
             }}
             QPushButton:hover {{
-                background-color: {get_colors().BG_LIGHT};
-                color: {get_colors().RED};
+                background-color: {get_colors().BG_LIGHTER};
+                color: {exit_color};
+                border-color: {exit_color};
             }}
         """)
         button_layout.addWidget(delete_btn)
         
         cancel_btn = QPushButton("Cancelar")
         cancel_btn.clicked.connect(self.reject)
+        cancel_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        cancel_btn.setMaximumWidth(220)
         cancel_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().AQUA};
                 color: {get_colors().BUTTON_TEXT};
                 border: 2px solid {get_colors().AQUA};
                 border-radius: 6px;
-                padding: 10px 25px;
-                font-size: 12pt;
+                padding: 8px 22px;
+                font-size: 11pt;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHT};
@@ -2004,15 +2067,16 @@ class ManageLoansWindow(QDialog):
         close_btn.setStyleSheet(f"""
             QPushButton {{
                 background-color: {get_colors().BG_LIGHT};
-                color: {get_colors().FG};
-                border: 2px solid {get_colors().BG_LIGHTER};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
                 border-radius: 6px;
                 padding: 10px 30px;
                 font-size: 12pt;
             }}
             QPushButton:hover {{
                 background-color: {get_colors().BG_LIGHTER};
-                border-color: {get_colors().BLUE};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
             }}
         """)
         bottom.addWidget(close_btn)
@@ -2404,7 +2468,21 @@ class ViewLoanPaymentsWindow(QDialog):
 
         close_btn = QPushButton("Cerrar")
         close_btn.clicked.connect(self.close)
-        close_btn.setStyleSheet(fullscreen_btn.styleSheet())
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-radius: 6px;
+                padding: 10px 30px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHTER};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+            }}
+        """)
         btns.addWidget(close_btn)
 
         layout.addLayout(btns)

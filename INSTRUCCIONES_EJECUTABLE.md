@@ -88,7 +88,7 @@ Debe contener las siguientes columnas:
 - empleado_fijo (0/1)
 - salario_minimo
 - Empleado por contrato (Sí/No)
-- ISL
+- ISLR
 - seguridad (Sí/No)
 
 ### Reporte de Asistencia.xlsx

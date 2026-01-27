@@ -29,7 +29,7 @@ python gui.py
 - Opción de especificar una fecha de referencia (o usar la más reciente)
 - Muestra mensajes detallados del proceso de cálculo
 - Genera automáticamente el archivo Excel con la nómina calculada
-- Incluye deducciones automáticas (Seguro Social/Educativo/ISL) y préstamos (si aplica)
+- Incluye deducciones automáticas (Seguro Social/Educativo/ISLR) y préstamos (si aplica)
 - Para Seguridad, calcula turnos según `seguridad_horario.xlsx` y genera alertas si hay inconsistencias
 
 ### 2. Gestionar Empleados
@@ -83,7 +83,7 @@ La aplicación requiere los siguientes archivos Excel:
 
 1. **employees_information.xlsx**: Archivo con la información de los empleados
    - Columnas usadas por el sistema: `ID`, `nombre`, `cargo`, `salario`, `n_de_cuenta`, `banco`, `tipo_de_cuenta`,
-     `salario_fijo`, `empleado_fijo`, `salario_minimo`, `Empleado por contrato`, `ISL`, `seguridad`
+     `salario_fijo`, `empleado_fijo`, `salario_minimo`, `Empleado por contrato`, `ISLR`, `seguridad`
 
 2. **Reporte de Asistencia.xlsx**: Archivo con los registros de asistencia
    - Columnas requeridas: ID, nombre, fecha, hora
