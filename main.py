@@ -2,12 +2,22 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import os
+import sys
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
-DEFAULT_PRESTAMOS_FILE = "prestamos.xlsx"
-DEFAULT_SEGURIDAD_HORARIO_FILE = "seguridad_horario.xlsx"
+# Carpeta donde se guardan y leen los archivos de datos (Excel, logo, etc.)
+if getattr(sys, "frozen", False):
+    _BASE_DIR = os.path.dirname(sys.executable)
+else:
+    _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(_BASE_DIR, "datos")
+
+DEFAULT_EMPLOYEES_FILE = os.path.join(DATA_DIR, "employees_information.xlsx")
+DEFAULT_HOURS_FILE = os.path.join(DATA_DIR, "Reporte de Asistencia.xlsx")
+DEFAULT_PRESTAMOS_FILE = os.path.join(DATA_DIR, "prestamos.xlsx")
+DEFAULT_SEGURIDAD_HORARIO_FILE = os.path.join(DATA_DIR, "seguridad_horario.xlsx")
 
 
 def parse_bool(value) -> bool:
@@ -33,6 +43,7 @@ def ensure_seguridad_horario_file(horario_file: str = DEFAULT_SEGURIDAD_HORARIO_
     Crea un archivo de configuración de seguridad si no existe.
     Este archivo permite cambiar el turno sin tocar código.
     """
+    os.makedirs(DATA_DIR, exist_ok=True)
     if os.path.exists(horario_file):
         return
 
@@ -135,6 +146,7 @@ def ensure_prestamos_file(prestamos_file: str = DEFAULT_PRESTAMOS_FILE) -> None:
       - Hoja 'Prestamos' (estado del préstamo)
       - Hoja 'PagosPrestamo' (bitácora de descuentos aplicados)
     """
+    os.makedirs(DATA_DIR, exist_ok=True)
     if os.path.exists(prestamos_file):
         return
 
@@ -697,17 +709,19 @@ def es_feriado_o_domingo(fecha):
     
     return False
 
-def leer_reporte_asistencia(archivo="Reporte de Asistencia.xlsx"):
+def leer_reporte_asistencia(archivo=None):
     """
     Lee el archivo de Reporte de Asistencia del escáner biométrico y lo convierte
     al formato esperado por el sistema.
     
     Args:
-        archivo: Ruta al archivo Excel del reporte de asistencia
+        archivo: Ruta al archivo Excel del reporte de asistencia (por defecto datos/Reporte de Asistencia.xlsx)
         
     Returns:
         DataFrame con columnas: ID, nombre, fecha, hora
     """
+    if archivo is None:
+        archivo = DEFAULT_HOURS_FILE
     try:
         # Leer el archivo sin encabezados primero para encontrar la fila de encabezados
         df_raw = pd.read_excel(archivo, header=None)
@@ -1254,24 +1268,95 @@ def get_quincena_periods(daily_hours_df):
     return daily_hours_df
 
 
-def calculate_payroll_quincenal(employees_file="employees_information.xlsx", 
-                                 hours_file="Reporte de Asistencia.xlsx",
+def manual_hours_to_daily_df(manual_hours_df, quincena_inicio_target, quincena_fin_target):
+    """
+    Convierte un DataFrame de horas manuales (por empleado y tipo) al formato
+    daily_hours_df que usa el cálculo de nómina.
+    
+    manual_hours_df debe tener columnas:
+      - ID (empleado)
+      - nombre (opcional)
+      - horas_normales (horas en días laborales normales, sin contar después de 3 PM)
+      - horas_extra (horas después de 3 PM en días normales - 25% adicional)
+      - horas_domingo (horas trabajadas en domingos - 50% adicional)
+      - horas_feriado (horas trabajadas en feriados - 50% adicional)
+    
+    Se generan filas sintéticas para que el cálculo de nómina aplique las mismas
+    reglas (normales, extra, feriado/domingo).
+    """
+    if manual_hours_df is None or manual_hours_df.empty:
+        return pd.DataFrame(columns=["ID", "nombre", "fecha", "horas_trabajadas", "horas_extra", "es_feriado_domingo", "quincena_inicio", "quincena_fin"])
+    
+    def safe_float(val, default=0.0):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return default
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return default
+    
+    rows = []
+    for _, row in manual_hours_df.iterrows():
+        emp_id = row.get("ID")
+        nombre = row.get("nombre", "")
+        if pd.isna(emp_id):
+            continue
+        hn = max(0.0, safe_float(row.get("horas_normales", 0)))
+        he = max(0.0, safe_float(row.get("horas_extra", 0)))
+        hd = max(0.0, safe_float(row.get("horas_domingo", 0)))
+        hf = max(0.0, safe_float(row.get("horas_feriado", 0)))
+        h_fd = hd + hf  # feriado y domingo se pagan igual (50% adicional)
+        
+        # Fechas sintéticas para que groupby por (ID, quincena_inicio) tenga varias filas
+        base_date = pd.Timestamp(quincena_inicio_target)
+        if hn > 0:
+            rows.append({
+                "ID": emp_id, "nombre": nombre, "fecha": base_date,
+                "horas_trabajadas": hn, "horas_extra": 0.0, "es_feriado_domingo": False,
+                "quincena_inicio": quincena_inicio_target, "quincena_fin": quincena_fin_target,
+            })
+        if he > 0:
+            rows.append({
+                "ID": emp_id, "nombre": nombre, "fecha": base_date + timedelta(days=1),
+                "horas_trabajadas": he, "horas_extra": he, "es_feriado_domingo": False,
+                "quincena_inicio": quincena_inicio_target, "quincena_fin": quincena_fin_target,
+            })
+        if h_fd > 0:
+            rows.append({
+                "ID": emp_id, "nombre": nombre, "fecha": base_date + timedelta(days=2),
+                "horas_trabajadas": h_fd, "horas_extra": 0.0, "es_feriado_domingo": True,
+                "quincena_inicio": quincena_inicio_target, "quincena_fin": quincena_fin_target,
+            })
+    
+    if not rows:
+        return pd.DataFrame(columns=["ID", "nombre", "fecha", "horas_trabajadas", "horas_extra", "es_feriado_domingo", "quincena_inicio", "quincena_fin"])
+    return pd.DataFrame(rows)
+
+
+def calculate_payroll_quincenal(employees_file=None, 
+                                 hours_file=None,
                                  output_file=None,
                                  quincena_fecha=None,
                                  prestamos_file: str = DEFAULT_PRESTAMOS_FILE,
-                                 seguridad_horario_file: str = DEFAULT_SEGURIDAD_HORARIO_FILE):
+                                 seguridad_horario_file: str = DEFAULT_SEGURIDAD_HORARIO_FILE,
+                                 manual_hours_df=None):
     """
     Calcula la nómina quincenal para todos los empleados de UNA quincena específica.
     
     Args:
         employees_file: Archivo Excel con información de empleados
-        hours_file: Archivo Excel del reporte de asistencia del escáner biométrico
+        hours_file: Archivo Excel del reporte de asistencia del escáner biométrico (ignorado si manual_hours_df no es None)
         output_file: Nombre del archivo Excel de salida (si es None, se genera automáticamente)
-        quincena_fecha: Fecha de referencia para determinar qué quincena calcular (si es None, usa la más reciente)
+        quincena_fecha: Fecha de referencia para determinar qué quincena calcular (obligatorio si manual_hours_df no es None)
+        manual_hours_df: Si se proporciona, se usan estas horas en lugar del reporte biométrico (columnas: ID, nombre, horas_normales, horas_extra, horas_domingo, horas_feriado)
         
     Returns:
         DataFrame con la nómina calculada o None si hay errores
     """
+    if employees_file is None:
+        employees_file = DEFAULT_EMPLOYEES_FILE
+    if hours_file is None:
+        hours_file = DEFAULT_HOURS_FILE
     print("="*80)
     print("SISTEMA DE NOMINA QUINCENAL")
     print("="*80)
@@ -1295,84 +1380,94 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
     except Exception:
         security_ids = set()
     
-    # Leer archivo de horas trabajadas desde el reporte de asistencia
-    print(f"\nLeyendo reporte de asistencia desde: {hours_file}")
-    try:
-        hours_df = leer_reporte_asistencia(hours_file)
-        print(f"[OK] Encontrados {len(hours_df)} registros de asistencia")
-    except Exception as e:
-        print(f"[ERROR] Error al leer {hours_file}: {e}")
-        return None
-
-    # Normalizar fecha en hours_df (para quincena y para seguridad)
-    if not pd.api.types.is_datetime64_any_dtype(hours_df["fecha"]):
-        hours_df["fecha"] = pd.to_datetime(hours_df["fecha"], errors="coerce")
-        if hours_df["fecha"].isna().any():
-            hours_df["fecha"] = pd.to_datetime(hours_df["fecha"], format="%d/%m/%Y", errors="coerce")
-    
-    # Validar que cada empleado tenga exactamente 2 registros por día
-    print("\nValidando registros de asistencia...")
-    errors = validate_attendance_records(hours_df, security_ids=security_ids)
-    
-    if errors:
-        print("\n" + "="*80)
-        print("ERRORES ENCONTRADOS - CORRIJA ANTES DE CONTINUAR")
-        print("="*80)
-        for error in errors:
-            print(f"\n{error['mensaje']}")
-        print("\n" + "="*80)
-        return None
-    
-    print("[OK] Todos los registros son validos")
-
-    # Determinar qué quincena calcular (usar hours_df para poder cargar config de seguridad antes del cálculo diario)
-    if quincena_fecha is None:
-        fecha_maxima = hours_df["fecha"].max()
-        quincena_fecha = fecha_maxima
-        print(f"Calculando nómina para la quincena más reciente (fecha de referencia: {quincena_fecha.strftime('%d/%m/%Y')})")
-    else:
+    # --- Ruta con horas manuales (sin reporte biométrico) ---
+    if manual_hours_df is not None and not manual_hours_df.empty:
+        if quincena_fecha is None:
+            print("[ERROR] Al usar horas manuales debe indicar la fecha de referencia de la quincena (quincena_fecha).")
+            return None
         if isinstance(quincena_fecha, str):
             quincena_fecha = pd.to_datetime(quincena_fecha, format="%d/%m/%Y", errors="coerce")
         elif not isinstance(quincena_fecha, pd.Timestamp):
             quincena_fecha = pd.to_datetime(quincena_fecha)
-        print(f"Calculando nómina para quincena que contiene la fecha: {quincena_fecha.strftime('%d/%m/%Y')}")
-    
-    # Determinar el inicio de la quincena para la fecha especificada
-    day = quincena_fecha.day
-    if day <= 15:
-        quincena_inicio_target = quincena_fecha.replace(day=1)
-    else:
-        quincena_inicio_target = quincena_fecha.replace(day=16)
-    quincena_fin_target = quincena_inicio_target + timedelta(days=14)
-    
-    print(f"Período de la quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
-
-    # Determinar fecha de pago según la quincena (se usa también para préstamos)
-    if quincena_inicio_target.day == 1:
-        # Primera quincena: pago el día 15
-        fecha_pago = quincena_inicio_target.replace(day=15)
-    else:
-        # Segunda quincena: pago el último día del mes
-        if quincena_inicio_target.month == 12:
-            fecha_pago = quincena_inicio_target.replace(day=31)
+        day = quincena_fecha.day
+        if day <= 15:
+            quincena_inicio_target = quincena_fecha.replace(day=1)
         else:
-            siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
-            fecha_pago = siguiente_mes - timedelta(days=1)
+            quincena_inicio_target = quincena_fecha.replace(day=16)
+        quincena_fin_target = quincena_inicio_target + timedelta(days=14)
+        print(f"Calculando nómina con HORAS MANUALES para quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
+        if quincena_inicio_target.day == 1:
+            fecha_pago = quincena_inicio_target.replace(day=15)
+        else:
+            if quincena_inicio_target.month == 12:
+                fecha_pago = quincena_inicio_target.replace(day=31)
+            else:
+                siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
+                fecha_pago = siguiente_mes - timedelta(days=1)
+        seguridad_cfg = leer_seguridad_config(fecha_pago, seguridad_horario_file)
+        daily_hours_df = manual_hours_to_daily_df(manual_hours_df, quincena_inicio_target, quincena_fin_target)
+        print(f"[OK] Horas manuales convertidas para {daily_hours_df['ID'].nunique()} empleados")
+    else:
+        # --- Ruta normal: reporte de asistencia biométrico ---
+        print(f"\nLeyendo reporte de asistencia desde: {hours_file}")
+        try:
+            hours_df = leer_reporte_asistencia(hours_file)
+            print(f"[OK] Encontrados {len(hours_df)} registros de asistencia")
+        except Exception as e:
+            print(f"[ERROR] Error al leer {hours_file}: {e}")
+            return None
 
-    # Leer configuración de seguridad vigente para esta quincena
-    seguridad_cfg = leer_seguridad_config(fecha_pago, seguridad_horario_file)
+        if not pd.api.types.is_datetime64_any_dtype(hours_df["fecha"]):
+            hours_df["fecha"] = pd.to_datetime(hours_df["fecha"], errors="coerce")
+            if hours_df["fecha"].isna().any():
+                hours_df["fecha"] = pd.to_datetime(hours_df["fecha"], format="%d/%m/%Y", errors="coerce")
+        
+        print("\nValidando registros de asistencia...")
+        errors = validate_attendance_records(hours_df, security_ids=security_ids)
+        if errors:
+            print("\n" + "="*80)
+            print("ERRORES ENCONTRADOS - CORRIJA ANTES DE CONTINUAR")
+            print("="*80)
+            for error in errors:
+                print(f"\n{error['mensaje']}")
+            print("\n" + "="*80)
+            return None
+        print("[OK] Todos los registros son validos")
 
-    # Calcular horas trabajadas por día (incluye lógica especial para seguridad)
-    print("\nCalculando horas trabajadas por dia...")
-    daily_hours_df = calculate_hours_per_day_mixed(hours_df, security_ids=security_ids, security_config=seguridad_cfg)
-    print(f"[OK] Horas calculadas para {len(daily_hours_df)} dias")
+        if quincena_fecha is None:
+            fecha_maxima = hours_df["fecha"].max()
+            quincena_fecha = fecha_maxima
+            print(f"Calculando nómina para la quincena más reciente (fecha de referencia: {quincena_fecha.strftime('%d/%m/%Y')})")
+        else:
+            if isinstance(quincena_fecha, str):
+                quincena_fecha = pd.to_datetime(quincena_fecha, format="%d/%m/%Y", errors="coerce")
+            elif not isinstance(quincena_fecha, pd.Timestamp):
+                quincena_fecha = pd.to_datetime(quincena_fecha)
+            print(f"Calculando nómina para quincena que contiene la fecha: {quincena_fecha.strftime('%d/%m/%Y')}")
+        
+        day = quincena_fecha.day
+        if day <= 15:
+            quincena_inicio_target = quincena_fecha.replace(day=1)
+        else:
+            quincena_inicio_target = quincena_fecha.replace(day=16)
+        quincena_fin_target = quincena_inicio_target + timedelta(days=14)
+        print(f"Período de la quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
 
-    # Agrupar en períodos quincenales
-    print("\nAgrupando en períodos quincenales...")
-    daily_hours_df = get_quincena_periods(daily_hours_df)
-    
-    # Filtrar solo los datos de la quincena objetivo
-    daily_hours_df = daily_hours_df[daily_hours_df['quincena_inicio'] == quincena_inicio_target]
+        if quincena_inicio_target.day == 1:
+            fecha_pago = quincena_inicio_target.replace(day=15)
+        else:
+            if quincena_inicio_target.month == 12:
+                fecha_pago = quincena_inicio_target.replace(day=31)
+            else:
+                siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
+                fecha_pago = siguiente_mes - timedelta(days=1)
+        seguridad_cfg = leer_seguridad_config(fecha_pago, seguridad_horario_file)
+        print("\nCalculando horas trabajadas por dia...")
+        daily_hours_df = calculate_hours_per_day_mixed(hours_df, security_ids=security_ids, security_config=seguridad_cfg)
+        print(f"[OK] Horas calculadas para {len(daily_hours_df)} dias")
+        print("\nAgrupando en períodos quincenales...")
+        daily_hours_df = get_quincena_periods(daily_hours_df)
+        daily_hours_df = daily_hours_df[daily_hours_df['quincena_inicio'] == quincena_inicio_target]
     
     if daily_hours_df.empty:
         print(f"[ERROR] No se encontraron datos para la quincena del {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
@@ -1431,8 +1526,10 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         }
     
     # Calcular nómina por quincena (solo una quincena ahora)
+    # Empleados de seguridad van solo a nomina_seguridad_*.xlsx; no aparecen en la nómina normal
     print("\nCalculando nómina...")
     payroll_results = []
+    payroll_results_seguridad = []
 
     # Cargar préstamos una sola vez (si existe el archivo)
     prestamos_enabled = True
@@ -1627,7 +1724,7 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
                 except Exception:
                     dif_turno_min = ""
 
-        # Preparar datos para el resultado
+        # Preparar datos para el resultado (nómina normal: sin empleados de seguridad)
         resultado = {
             'ID': employee_id,
             'Nombre': emp_info['nombre'],
@@ -1635,7 +1732,6 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Tipo': tipo_pago,
             'Salario Fijo': 'Sí' if emp_info['salario_fijo'] else 'No',
             'Empleado Fijo': 'Sí' if emp_info['empleado_fijo'] else 'No',
-            'Seguridad': 'Sí' if emp_info.get('seguridad', False) else 'No',
             'Empleado por contrato': 'Sí' if emp_info['empleado_por_contrato'] else 'No',
             'Salario Base': emp_info['salario'],
             'Quincena Inicio': quincena_inicio.strftime('%d/%m/%Y'),
@@ -1644,19 +1740,6 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Horas Extra (después 3 PM)': round(total_horas_extra, 2),
             'Pago Extra (25% adicional)': round(pago_extra, 2),
             'Pago Quincenal': round(pago_quincenal, 2),
-            # Config de seguridad (para auditoría en el archivo de nómina)
-            'Horas Turno Seguridad': (seguridad_cfg.get('horas_turno') if emp_info.get('seguridad', False) else ''),
-            'Hora Cambio Turno Seguridad': (seguridad_cfg.get('hora_cambio_turno') if emp_info.get('seguridad', False) else ''),
-            'Margen Salida Seguridad (min)': (seguridad_cfg.get('margen_salida_minutos') if emp_info.get('seguridad', False) else ''),
-            'Tolerancia Turno Seguridad (min)': (seguridad_cfg.get('tolerancia_turno_minutos') if emp_info.get('seguridad', False) else ''),
-            'Turnos Seguridad Día': (turnos_dia if emp_info.get('seguridad', False) else ''),
-            'Turnos Seguridad Noche': (turnos_noche if emp_info.get('seguridad', False) else ''),
-            'Total Turnos Seguridad': ((turnos_dia + turnos_noche) if emp_info.get('seguridad', False) else ''),
-            'Empleados Seguridad Turno Día': (seguridad_cfg.get('empleados_turno_dia') if emp_info.get('seguridad', False) else ''),
-            'Empleados Seguridad Turno Noche': (seguridad_cfg.get('empleados_turno_noche') if emp_info.get('seguridad', False) else ''),
-            'Horas Reales Seguridad (prom)': (horas_reales_seguridad if emp_info.get('seguridad', False) else ''),
-            'Dif Turno Seguridad (min, prom)': (dif_turno_min if emp_info.get('seguridad', False) else ''),
-            'Alerta Seguridad': (alerta_seguridad if emp_info.get('seguridad', False) else ''),
             'Seguro Social (9.75%)': round(seguro_social, 2),
             'Seguro Educativo (1.25%)': round(seguro_educativo, 2),
             'ISLR': round(descuento_islr, 2),
@@ -1667,24 +1750,31 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
             'Banco': emp_info['banco'],
             'Tipo de Cuenta': emp_info['tipo_de_cuenta']
         }
-        
-        # Agregar información de feriados/domingos y bono
         horas_feriado_domingo_total = group[group['es_feriado_domingo'] == True]['horas_trabajadas'].sum()
         resultado['Horas Feriado/Domingo'] = round(horas_feriado_domingo_total, 2)
         resultado['Pago Feriado/Domingo (50% adicional)'] = round(pago_feriado_domingo, 2)
         resultado['Bono Horas Extra'] = round(bono_horas_extra, 2)
-        
-        payroll_results.append(resultado)
+
+        if emp_info.get('seguridad', False):
+            payroll_results_seguridad.append(resultado)
+        else:
+            payroll_results.append(resultado)
     
-    if not payroll_results:
+    if not payroll_results and not payroll_results_seguridad:
         print("[ERROR] No se pudo calcular la nomina. Verifique los datos.")
         return None
-    
-    # Crear DataFrame con resultados
-    payroll_df = pd.DataFrame(payroll_results)
-    
-    # Ordenar por nombre
-    payroll_df = payroll_df.sort_values(['Nombre'])
+
+    # Nómina normal (sin empleados de seguridad)
+    columnas_principal = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Empleado por contrato',
+                'Salario Base', 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
+                'Total Horas Trabajadas', 'Horas Extra (después 3 PM)',
+                'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
+                'Pago Feriado/Domingo (50% adicional)',
+                'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISLR', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
+                'Número de Cuenta', 'Banco', 'Tipo de Cuenta', 'Total Pago a Empleados']
+    payroll_df = pd.DataFrame(payroll_results) if payroll_results else pd.DataFrame(columns=columnas_principal)
+    if not payroll_df.empty:
+        payroll_df = payroll_df.sort_values(['Nombre'])
 
     # Guardar cambios de préstamos si se aplicaron descuentos
     if prestamos_enabled and any_prestamo_changes:
@@ -1693,82 +1783,78 @@ def calculate_payroll_quincenal(employees_file="employees_information.xlsx",
         except Exception as e:
             print(f"[ADVERTENCIA] No se pudieron guardar los cambios en préstamos: {e}")
     
-    # Generar nombre de archivo si no se especificó
+    # Generar nombre de archivo si no se especificó (guardar en carpeta datos)
     if output_file is None:
         fecha_pago_str = fecha_pago.strftime('%Y%m%d')
-        output_file = f"nomina_quincenal_pago_{fecha_pago_str}.xlsx"
+        os.makedirs(DATA_DIR, exist_ok=True)
+        output_file = os.path.join(DATA_DIR, f"nomina_quincenal_pago_{fecha_pago_str}.xlsx")
     
-    # Mostrar resumen
-    print("\n" + "="*80)
-    print("RESUMEN DE NOMINA")
-    print("="*80)
-    print(f"Quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
-    print(f"Fecha de pago: {fecha_pago.strftime('%d/%m/%Y')}")
-    print(f"Total de empleados: {payroll_df['Nombre'].nunique()}")
-    print(f"Total de pagos: {len(payroll_df)}")
-    print(f"Total horas extra (después 3 PM): {payroll_df['Horas Extra (después 3 PM)'].sum():.2f}")
-    print(f"Total pago extra (25% adicional): ${payroll_df['Pago Extra (25% adicional)'].sum():,.2f}")
-    if 'Bono Horas Extra' in payroll_df.columns:
-        print(f"Total bono horas extra: ${payroll_df['Bono Horas Extra'].sum():,.2f}")
-    print(f"Total horas feriado/domingo: {payroll_df['Horas Feriado/Domingo'].sum():.2f}")
-    print(f"Total pago feriado/domingo (50% adicional): ${payroll_df['Pago Feriado/Domingo (50% adicional)'].sum():,.2f}")
-    
-    # Agregar columna de fecha de pago al DataFrame
+    # Agregar columna de fecha de pago y Total Pago a Empleados
     payroll_df['Fecha de Pago'] = fecha_pago.strftime('%d/%m/%Y')
-    
-    # Reordenar columnas: renombrar pago quincenal a total neto
     if 'Pago Quincenal' in payroll_df.columns:
         payroll_df = payroll_df.rename(columns={'Pago Quincenal': 'Total Pago a Empleados'})
         if 'Total Descuentos' in payroll_df.columns:
             payroll_df['Total Pago a Empleados'] = payroll_df['Total Pago a Empleados'] - payroll_df['Total Descuentos']
-    
-    # Mostrar total a pagar usando el nuevo nombre de columna
-    if 'Total Pago a Empleados' in payroll_df.columns:
-        total_pagar = payroll_df['Total Pago a Empleados'].sum()
+
+    # Mostrar resumen (nómina normal)
+    print("\n" + "="*80)
+    print("RESUMEN DE NOMINA (empleados no seguridad)")
+    print("="*80)
+    print(f"Quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
+    print(f"Fecha de pago: {fecha_pago.strftime('%d/%m/%Y')}")
+    if not payroll_df.empty:
+        print(f"Total de empleados: {payroll_df['Nombre'].nunique()}")
+        print(f"Total de pagos: {len(payroll_df)}")
+        print(f"Total horas extra (después 3 PM): {payroll_df['Horas Extra (después 3 PM)'].sum():.2f}")
+        print(f"Total pago extra (25% adicional): ${payroll_df['Pago Extra (25% adicional)'].sum():,.2f}")
+        if 'Bono Horas Extra' in payroll_df.columns:
+            print(f"Total bono horas extra: ${payroll_df['Bono Horas Extra'].sum():,.2f}")
+        print(f"Total horas feriado/domingo: {payroll_df['Horas Feriado/Domingo'].sum():.2f}")
+        print(f"Total pago feriado/domingo (50% adicional): ${payroll_df['Pago Feriado/Domingo (50% adicional)'].sum():,.2f}")
+        total_pagar = payroll_df['Total Pago a Empleados'].sum() if 'Total Pago a Empleados' in payroll_df.columns else 0
     else:
-        total_pagar = payroll_df['Pago Quincenal'].sum() if 'Pago Quincenal' in payroll_df.columns else 0
-    
+        print("Total de empleados: 0 (solo empleados de seguridad en esta quincena)")
+        total_pagar = 0
     print(f"Total a pagar: ${total_pagar:,.2f}")
     print("="*80)
-    
-    # Definir orden de columnas (sin "Total Pago a Empleados" que va al final)
-    columnas = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Seguridad', 'Empleado por contrato',
-                'Salario Base', 
-                'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
-                'Total Horas Trabajadas', 'Horas Extra (después 3 PM)', 
-                'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
-                'Pago Feriado/Domingo (50% adicional)', 
-                'Horas Turno Seguridad', 'Hora Cambio Turno Seguridad', 'Margen Salida Seguridad (min)',
-                'Tolerancia Turno Seguridad (min)', 'Horas Reales Seguridad (prom)', 'Dif Turno Seguridad (min, prom)', 'Alerta Seguridad',
-                'Turnos Seguridad Día', 'Turnos Seguridad Noche', 'Total Turnos Seguridad',
-                'Empleados Seguridad Turno Día', 'Empleados Seguridad Turno Noche',
-                'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISLR', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
-                'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
-    
-    # Solo incluir columnas que existen en el DataFrame
-    columnas_existentes = [col for col in columnas if col in payroll_df.columns]
-    
-    # Agregar "Total Pago a Empleados" al final si existe
-    if 'Total Pago a Empleados' in payroll_df.columns:
-        columnas_existentes.append('Total Pago a Empleados')
-    
-    # Reordenar DataFrame
-    payroll_df = payroll_df[columnas_existentes]
-    
-    # Guardar en Excel
+
+    columnas_existentes_principal = [col for col in columnas_principal if col in payroll_df.columns]
+
+    # Guardar nómina principal (solo empleados no seguridad)
     print(f"\nGuardando nomina en: {output_file}")
     try:
-        payroll_df.to_excel(output_file, index=False, engine='openpyxl')
+        payroll_df[columnas_existentes_principal].to_excel(output_file, index=False, engine='openpyxl')
         print(f"[OK] Nomina guardada exitosamente")
         print(f"\nArchivo generado: {output_file}")
         print(f"Fecha de pago: {fecha_pago.strftime('%d/%m/%Y')}")
     except Exception as e:
         print(f"[ERROR] Error al guardar archivo: {e}")
         return None
-    
+
+    # Archivo aparte: nómina de seguridad (solo horas trabajadas y datos esenciales para el pago)
+    if payroll_results_seguridad:
+        # Seguridad: todas las horas se pagan igual (sin horas extra ni feriado/domingo)
+        columnas_seguridad = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Base', 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
+            'Total Horas Trabajadas',
+            'Seguro Social (9.75%)', 'Seguro Educativo (1.25%)', 'ISLR', 'Descuento Préstamo', 'Total Descuentos', 'Total Saldo Préstamo',
+            'Total Pago a Empleados', 'Número de Cuenta', 'Banco', 'Tipo de Cuenta']
+        seguridad_df = pd.DataFrame(payroll_results_seguridad)
+        seguridad_df['Fecha de Pago'] = fecha_pago.strftime('%d/%m/%Y')
+        if 'Pago Quincenal' in seguridad_df.columns and 'Total Descuentos' in seguridad_df.columns:
+            seguridad_df['Total Pago a Empleados'] = seguridad_df['Pago Quincenal'] - seguridad_df['Total Descuentos']
+        cols_seg = [c for c in columnas_seguridad if c in seguridad_df.columns]
+        seguridad_df = seguridad_df[cols_seg].sort_values('Nombre')
+        base = output_file.rsplit('.', 1)[0] if '.' in output_file else output_file
+        output_seguridad = base + '_seguridad.xlsx'
+        try:
+            seguridad_df.to_excel(output_seguridad, index=False, engine='openpyxl')
+            print(f"[OK] Nomina de seguridad guardada: {output_seguridad} ({len(seguridad_df)} empleados)")
+        except Exception as e:
+            print(f"[ADVERTENCIA] No se pudo guardar nomina de seguridad: {e}")
+
     return payroll_df
 
-def leer_empleados_normalizado(employees_file="employees_information.xlsx"):
+def leer_empleados_normalizado(employees_file=None):
     """
     Lee el archivo de empleados y normaliza los IDs (convierte floats enteros a int).
     Deja una sola columna de impuesto sobre la renta (ISLR); elimina ISL si existe.
@@ -1776,6 +1862,8 @@ def leer_empleados_normalizado(employees_file="employees_information.xlsx"):
     Returns:
         DataFrame con IDs normalizados o None si hay error
     """
+    if employees_file is None:
+        employees_file = DEFAULT_EMPLOYEES_FILE
     try:
         employees_df = pd.read_excel(employees_file)
         # Normalizar impuesto sobre la renta: solo ISLR (el código usa ISLR)
@@ -1805,8 +1893,10 @@ def leer_empleados_normalizado(employees_file="employees_information.xlsx"):
         print(f"[ERROR] Error al leer el archivo: {e}")
         return None
 
-def agregar_empleado(employees_file="employees_information.xlsx"):
+def agregar_empleado(employees_file=None):
     '''Funcion para agregar un empleado a la base de datos'''
+    if employees_file is None:
+        employees_file = DEFAULT_EMPLOYEES_FILE
     employees_df = leer_empleados_normalizado(employees_file)
     if employees_df is None:
         return None
@@ -2001,8 +2091,10 @@ def agregar_empleado(employees_file="employees_information.xlsx"):
         print(f"[ERROR] Error al guardar el archivo: {e}")
         return None
 
-def eliminar_empleado(employees_file="employees_information.xlsx"):
+def eliminar_empleado(employees_file=None):
     '''Funcion para eliminar un empleado de la base de datos'''
+    if employees_file is None:
+        employees_file = DEFAULT_EMPLOYEES_FILE
     employees_df = leer_empleados_normalizado(employees_file)
     if employees_df is None:
         return None
@@ -2075,8 +2167,10 @@ def eliminar_empleado(employees_file="employees_information.xlsx"):
         print(f"[ERROR] Error al guardar el archivo: {e}")
         return None
 
-def modificar_empleado(employees_file="employees_information.xlsx"):
+def modificar_empleado(employees_file=None):
     '''Funcion para modificar la informacion de un empleado de la base de datos'''
+    if employees_file is None:
+        employees_file = DEFAULT_EMPLOYEES_FILE
     employees_df = leer_empleados_normalizado(employees_file)
     if employees_df is None:
         return None
@@ -2270,8 +2364,6 @@ def main():
     if opcion == '1':
         print('Calculando nomina quincenal...')
         result = calculate_payroll_quincenal(
-            employees_file="employees_information.xlsx",
-            hours_file="Reporte de Asistencia.xlsx",
             output_file=None,
             quincena_fecha=None)
         if result is not None:

@@ -23,7 +23,9 @@ from main import (
     cerrar_prestamo,
     obtener_pagos_prestamo,
     registrar_pago_manual_prestamo,
+    DATA_DIR,
 )
+from generador_recibos import generar_recibos
 
 # Paleta de colores Gruvbox (versión suave)
 class GruvboxColors:
@@ -271,7 +273,7 @@ class NominaApp(QMainWindow):
         self.setWindowTitle("Sistema de Nómina ABCOPA")
         adjust_window_to_screen(self, width_ratio=0.65, height_ratio=0.75, min_width_ratio=0.50, min_height_ratio=0.55)
         self._logo_has_image = False
-        self._logo_path = "logo.png"
+        self._logo_path = os.path.join(DATA_DIR, "logo.png")
 
         # Widget central
         central_widget = QWidget()
@@ -334,6 +336,7 @@ class NominaApp(QMainWindow):
         self.main_buttons = []
         buttons = [
             ("Calcular Nómina Quincenal", self.open_calculate_payroll),
+            ("Generar Recibos de Pago", self.open_generar_recibos),
             ("Gestionar Empleados", self.open_manage_employees),
             ("Gestionar Préstamos", self.open_manage_loans),
             ("Ver Nómina", self.view_payroll),
@@ -445,6 +448,46 @@ class NominaApp(QMainWindow):
         """Abre la ventana para calcular nómina"""
         self.calc_window = CalculatePayrollWindow(self)
         self.calc_window.show()
+
+    def open_generar_recibos(self):
+        """Abre diálogo para seleccionar nómina y genera recibos de pago por empleado."""
+        inicial = DATA_DIR if os.path.isdir(DATA_DIR) else os.getcwd()
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar archivo de nómina para generar recibos",
+            inicial,
+            "Nómina quincenal (*nomina_quincenal*.xlsx);;Archivos Excel (*.xlsx);;Todos (*.*)"
+        )
+        if not file_path:
+            return
+        if "_seguridad.xlsx" in file_path:
+            QMessageBox.warning(
+                self,
+                "Aviso",
+                "Seleccionó la nómina de seguridad. Se generarán recibos a partir de ese archivo.\n\n"
+                "Para la nómina general, seleccione el archivo sin '_seguridad' en el nombre."
+            )
+        self._recibos_thread = GenerarRecibosThread(file_path)
+        self._recibos_thread.finished.connect(self._on_recibos_generated)
+        self._recibos_thread.error.connect(self._on_recibos_error)
+        self._recibos_thread.start()
+
+    def _on_recibos_generated(self, carpeta, cantidad):
+        if cantidad > 0:
+            QMessageBox.information(
+                self,
+                "Recibos generados",
+                f"Se generaron {cantidad} recibos de pago.\n\nCarpeta:\n{carpeta}"
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Sin recibos",
+                "No se generó ningún recibo. Verifique que el archivo de nómina tenga filas de empleados."
+            )
+
+    def _on_recibos_error(self, msg):
+        QMessageBox.critical(self, "Error al generar recibos", msg)
     
     def open_manage_employees(self):
         """Abre la ventana para gestionar empleados"""
@@ -497,51 +540,79 @@ class NominaApp(QMainWindow):
             QMessageBox.critical(self, "Error", f"Error al leer el archivo de nómina:\n{str(e)}")
     
     def show_info(self):
-        """Muestra información del sistema"""
-        info_text = """
+        """Muestra información del sistema en un diálogo con scroll"""
+        InfoDialog(self).exec_()
+
+
+class InfoDialog(QDialog):
+    """Diálogo con scroll para ver toda la información del sistema."""
+    INFO_TEXT = """
 SISTEMA DE NÓMINA ABCOPA
 
-Este sistema permite calcular la nómina quincenal de los empleados
-basándose en las horas trabajadas registradas.
+Este sistema permite calcular la nómina quincenal de los empleados basándose en las horas trabajadas registradas.
 
 FUNCIONALIDADES:
 • Calcular nómina quincenal automáticamente
 • Gestionar empleados (agregar, eliminar, modificar)
-• Gestionar préstamos:
-  - Crear préstamo y definir cuota quincenal
-  - Pausar / reanudar
-  - Registrar pago manual
-  - Ver pagos (NÓMINA / MANUAL) con bitácora
-  - Cierre automático al saldar
-• Empleados de Seguridad (turnos):
-  - Turno configurable (por defecto 12h)
-  - Soporta turnos que cruzan medianoche (entrada/salida se emparejan consecutivamente)
-  - Margen de salida configurable (± minutos)
-  - Tolerancia de duración configurable (genera alertas si las marcas no cuadran)
-• Cálculo automático de horas extra (25% adicional después de las 3 PM)
-• Cálculo automático de pago por feriados/domingos (50% adicional)
+• Gestionar préstamos: crear préstamo, cuota quincenal, pausar/reanudar, registrar pago manual, ver pagos con bitácora, cierre automático al saldar
+• Empleados de Seguridad: nómina aparte (archivo *_seguridad.xlsx), turnos configurables (por defecto 12h), soporta turnos que cruzan medianoche; todas las horas se pagan igual (sin horas extra ni feriado/domingo)
+• Horas extra: 25% adicional después de las 3 PM (empleados no seguridad)
+• Feriados/domingos: 50% adicional (empleados no seguridad)
 • Ventanas adaptables a la resolución de la pantalla
 
 ARCHIVOS REQUERIDOS:
-• employees_information.xlsx - Información de empleados
-• Reporte de Asistencia.xlsx - Reporte de asistencia del escáner biométrico
-• prestamos.xlsx - Control de préstamos y bitácora de pagos (se crea automáticamente si no existe)
-• seguridad_horario.xlsx - Configuración de turnos de seguridad (se crea automáticamente si no existe)
+• datos/employees_information.xlsx - Información de empleados
+• datos/Reporte de Asistencia.xlsx - Reporte del escáner biométrico
+• datos/prestamos.xlsx - Préstamos y bitácora (se crea si no existe)
+• datos/seguridad_horario.xlsx - Turnos de seguridad (se crea si no existe)
 
 TIPOS DE EMPLEADOS:
-• Salario Fijo: Cobran lo mismo sin importar las horas trabajadas
-• Empleado Fijo: Tienen un sueldo mínimo garantizado + bono por horas extra
-  si trabajan más de las horas requeridas para ese sueldo
-• Por Horas: Reciben pago según horas trabajadas con bonos por horas extra
-• Seguridad: Cobra como “Por Horas”, pero con turnos configurables (ej. 12h)
+• Salario Fijo: Cobran lo mismo sin importar las horas
+• Empleado Fijo: Sueldo mínimo garantizado + bono por horas extra si trabajan más de lo requerido
+• Por Horas: Pago según horas con bonos por horas extra
+• Seguridad: Cobran por horas con turnos configurables; no aparecen en la nómina normal, solo en el archivo de seguridad
 
 IMPORTANTE:
-• Se requiere exactamente 2 registros por día por empleado (entrada y salida)
-  (Excepto Seguridad: puede cruzar medianoche y se valida por pares de registros)
-• Los empleados fijos no pueden ser ambos tipos a la vez
-• Seguridad no puede ser “Salario Fijo” ni “Empleado Fijo”
-        """
-        QMessageBox.information(self, "Información del Sistema", info_text)
+• Se requieren 2 registros por día por empleado (entrada y salida). Seguridad: puede cruzar medianoche y se valida por pares
+• Empleados fijos no pueden ser ambos tipos a la vez
+• Seguridad no puede ser "Salario Fijo" ni "Empleado Fijo"
+"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Información del Sistema")
+        adjust_window_to_screen(self, width_ratio=0.55, height_ratio=0.70, min_width_ratio=0.45, min_height_ratio=0.50)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+        text = QTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText(self.INFO_TEXT.strip())
+        text.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().FG};
+                border: 1px solid {get_colors().BG_LIGHTER};
+                border-radius: 6px;
+                padding: 10px;
+                font-size: 11pt;
+            }}
+        """)
+        layout.addWidget(text)
+        btn = QPushButton("Cerrar")
+        btn.clicked.connect(self.accept)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: none;
+                border-radius: 6px;
+                padding: 10px 24px;
+                font-size: 11pt;
+            }}
+            QPushButton:hover {{ background-color: {get_colors().BG_LIGHTER}; color: {get_colors().FG}; }}
+        """)
+        layout.addWidget(btn, alignment=Qt.AlignCenter)
 
 
 class ViewPayrollWindow(QDialog):
@@ -573,20 +644,40 @@ class ViewPayrollWindow(QDialog):
         table.setColumnCount(len(df.columns))
         table.setHorizontalHeaderLabels(df.columns)
         
+        # Diferenciar columnas de dinero (formato $) vs horas/cantidades (solo números)
+        def _es_columna_horas_o_cantidad(col_name):
+            return ('Total Horas' in col_name or 'Horas Extra (después' in col_name or 'Horas Feriado' in col_name
+                    or 'Horas Turno' in col_name or 'Horas Reales' in col_name or 'Turnos Seguridad' in col_name
+                    or 'Total Turnos' in col_name or 'Margen Salida' in col_name or 'Tolerancia Turno' in col_name
+                    or 'Dif Turno' in col_name or 'Empleados Seguridad Turno' in col_name)
+
+        def _es_columna_moneda(col_name):
+            return (_es_columna_horas_o_cantidad(col_name) is False
+                    and ('Pago' in col_name or col_name == 'Salario Base' or 'Bono' in col_name or 'Seguro' in col_name
+                         or col_name == 'ISLR' or 'Descuento' in col_name or col_name == 'Total Descuentos'
+                         or 'Total Saldo' in col_name or col_name == 'Total Pago a Empleados'))
+
         # Insertar datos
         for i, row in df.iterrows():
             for j, col in enumerate(df.columns):
                 val = row[col]
                 if pd.isna(val):
                     item_text = ''
-                elif isinstance(val, (int, float)) and ('Pago' in col or 'Total' in col or 'Salario' in col or 'Bono' in col or 'Seguro' in col or 'ISLR' in col or 'Descuento' in col):
-                    item_text = f"${val:,.2f}"
+                elif isinstance(val, (int, float)):
+                    if _es_columna_moneda(col):
+                        item_text = f"${val:,.2f}"
+                    elif _es_columna_horas_o_cantidad(col):
+                        item_text = f"{val:,.2f}" if isinstance(val, float) else str(int(val))
+                    else:
+                        item_text = str(val)
                 else:
                     item_text = str(val)
-                
+
                 item = QTableWidgetItem(item_text)
                 item.setTextAlignment(Qt.AlignCenter)
-                if 'Total' in col or 'Pago' in col:
+                if _es_columna_moneda(col):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                elif _es_columna_horas_o_cantidad(col):
                     item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 table.setItem(i, j, item)
         
@@ -728,6 +819,226 @@ class CalculatePayrollThread(QThread):
             self.error.emit(str(e))
 
 
+class GenerarRecibosThread(QThread):
+    """Hilo para generar recibos de pago a partir de un archivo de nómina."""
+    finished = pyqtSignal(str, int)  # carpeta_salida, cantidad
+    error = pyqtSignal(str)
+
+    def __init__(self, archivo_nomina):
+        super().__init__()
+        self.archivo_nomina = archivo_nomina
+
+    def run(self):
+        try:
+            carpeta, cantidad = generar_recibos(
+                self.archivo_nomina,
+                plantilla=None,
+                carpeta_salida=None,
+                incluir_seguridad=False,
+            )
+            if carpeta is not None:
+                self.finished.emit(carpeta, cantidad)
+            else:
+                self.error.emit("No se pudo generar los recibos. Revise el archivo de nómina y la plantilla.")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class CalculatePayrollManualThread(QThread):
+    """Hilo para calcular nómina usando horas ingresadas manualmente (sin reporte biométrico)."""
+    finished = pyqtSignal(object, str)
+    error = pyqtSignal(str)
+
+    def __init__(self, employees_file, manual_hours_df, quincena_fecha):
+        super().__init__()
+        self.employees_file = employees_file
+        self.manual_hours_df = manual_hours_df
+        self.quincena_fecha = quincena_fecha
+
+    def run(self):
+        try:
+            import sys
+            from io import StringIO
+            old_stdout = sys.stdout
+            sys.stdout = output = StringIO()
+            result = calculate_payroll_quincenal(
+                employees_file=self.employees_file,
+                hours_file="",
+                output_file=None,
+                quincena_fecha=self.quincena_fecha,
+                manual_hours_df=self.manual_hours_df,
+            )
+            sys.stdout = old_stdout
+            output_text = output.getvalue()
+            self.finished.emit(result, output_text)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+class ManualHoursDialog(QDialog):
+    """
+    Diálogo para ingresar horas trabajadas manualmente por empleado (normales, extra, domingo, feriado)
+    cuando el biométrico no registró bien o se prefiere corregir manualmente.
+    """
+    manual_hours_ready = pyqtSignal(object, str)  # DataFrame, quincena_fecha_str
+
+    def __init__(self, parent, employees_file):
+        super().__init__(parent)
+        self.setWindowTitle("Ingresar horas manualmente")
+        self.employees_file = employees_file
+        adjust_window_to_screen(self, width_ratio=0.85, height_ratio=0.85, min_width_ratio=0.60, min_height_ratio=0.60)
+        layout = QVBoxLayout(self)
+        layout.setSpacing(12)
+        layout.setContentsMargins(20, 20, 20, 20)
+
+        info = QLabel(
+            "Ingrese las horas trabajadas por cada empleado en la quincena. "
+            "Use esta opción si el biométrico no registró bien o hay que corregir datos."
+        )
+        info.setWordWrap(True)
+        info.setStyleSheet(f"color: {get_colors().FG_DARK}; font-size: 10pt;")
+        layout.addWidget(info)
+
+        date_layout = QHBoxLayout()
+        date_layout.addWidget(QLabel("Fecha de referencia de la quincena:"))
+        self.date_edit = QDateEdit()
+        self.date_edit.setCalendarPopup(True)
+        self.date_edit.setDate(QDate.currentDate())
+        self.date_edit.setDisplayFormat("dd/MM/yyyy")
+        date_layout.addWidget(self.date_edit)
+        date_layout.addStretch()
+        layout.addLayout(date_layout)
+
+        table_label = QLabel("Horas por empleado (deje 0 si no aplica):")
+        layout.addWidget(table_label)
+        self.table = QTableWidget()
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels([
+            "ID", "Nombre", "Horas normales", "Horas extra (después 3 PM)", "Horas domingo", "Horas feriado"
+        ])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        layout.addWidget(self.table)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.setAlignment(Qt.AlignCenter)
+        calc_btn = QPushButton("Calcular nómina con estas horas")
+        calc_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 11pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+                border-color: {get_colors().AQUA};
+            }}
+        """)
+        calc_btn.clicked.connect(self._on_calculate)
+        btn_layout.addWidget(calc_btn)
+        close_btn = QPushButton("Cerrar")
+        close_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border: 2px solid {get_colors().EXIT if hasattr(get_colors(), 'EXIT') else get_colors().RED};
+                border-radius: 6px;
+                padding: 10px 20px;
+            }}
+            QPushButton:hover {{ background-color: {get_colors().BG_LIGHTER}; }}
+        """)
+        close_btn.clicked.connect(self.reject)
+        btn_layout.addWidget(close_btn)
+        layout.addLayout(btn_layout)
+
+        self._load_employees()
+
+    def _load_employees(self):
+        if not self.employees_file or not os.path.exists(self.employees_file):
+            QMessageBox.warning(self, "Archivo no encontrado", "No se encontró el archivo de empleados.")
+            return
+        try:
+            df = pd.read_excel(self.employees_file)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo leer el archivo de empleados: {e}")
+            return
+        self.table.setRowCount(len(df))
+        for i, row in df.iterrows():
+            emp_id = row.get("ID", row.get("id", ""))
+            nombre = row.get("nombre", row.get("Nombre", ""))
+            self.table.setItem(i, 0, QTableWidgetItem(str(emp_id)))
+            self.table.item(i, 0).setFlags(self.table.item(i, 0).flags() & ~Qt.ItemIsEditable)
+            self.table.setItem(i, 1, QTableWidgetItem(str(nombre)))
+            self.table.item(i, 1).setFlags(self.table.item(i, 1).flags() & ~Qt.ItemIsEditable)
+            for j in range(2, 6):
+                self.table.setItem(i, j, QTableWidgetItem("0"))
+            self.table.item(i, 2).setToolTip("Horas en días laborales normales (sin contar después de 3 PM)")
+            self.table.item(i, 3).setToolTip("Horas después de las 3 PM en días normales (25% adicional)")
+            self.table.item(i, 4).setToolTip("Horas trabajadas en domingos (50% adicional)")
+            self.table.item(i, 5).setToolTip("Horas trabajadas en feriados (50% adicional)")
+
+    def _on_calculate(self):
+        rows = []
+        for i in range(self.table.rowCount()):
+            id_item = self.table.item(i, 0)
+            name_item = self.table.item(i, 1)
+            if not id_item:
+                continue
+            emp_id = id_item.text().strip()
+            nombre = name_item.text() if name_item else ""
+            def val(col):
+                it = self.table.item(i, col)
+                if not it or not it.text().strip():
+                    return 0.0
+                try:
+                    return float(it.text().strip().replace(",", "."))
+                except ValueError:
+                    return 0.0
+            horas_normales = max(0.0, val(2))
+            horas_extra = max(0.0, val(3))
+            horas_domingo = max(0.0, val(4))
+            horas_feriado = max(0.0, val(5))
+            if horas_normales == 0 and horas_extra == 0 and horas_domingo == 0 and horas_feriado == 0:
+                continue
+            rows.append({
+                "ID": emp_id,
+                "nombre": nombre,
+                "horas_normales": horas_normales,
+                "horas_extra": horas_extra,
+                "horas_domingo": horas_domingo,
+                "horas_feriado": horas_feriado,
+            })
+        if not rows:
+            QMessageBox.warning(
+                self,
+                "Sin datos",
+                "Ingrese al menos algunas horas para al menos un empleado antes de calcular la nómina."
+            )
+            return
+        manual_df = pd.DataFrame(rows)
+        qdate = self.date_edit.date()
+        quincena_str = f"{qdate.day():02d}/{qdate.month():02d}/{qdate.year()}"
+        self.manual_hours_ready.emit(manual_df, quincena_str)
+        self.accept()
+
+    @staticmethod
+    def get_manual_hours(parent, employees_file):
+        """Abre el diálogo y retorna (manual_hours_df, quincena_fecha_str) o (None, None) si se canceló."""
+        dlg = ManualHoursDialog(parent, employees_file)
+        result_data = [None, None]
+        def on_ready(df, date_str):
+            result_data[0] = df
+            result_data[1] = date_str
+        dlg.manual_hours_ready.connect(on_ready)
+        if dlg.exec_() == QDialog.Accepted and result_data[0] is not None:
+            return result_data[0], result_data[1]
+        return None, None
+
+
 class CalculatePayrollWindow(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -749,7 +1060,7 @@ class CalculatePayrollWindow(QDialog):
         button_layout = QHBoxLayout()
         button_layout.setAlignment(Qt.AlignCenter)
         
-        self.calculate_btn = QPushButton("Calcular Nómina")
+        self.calculate_btn = QPushButton("Calcular Nómina (con reporte biométrico)")
         self.calculate_btn.clicked.connect(self.calculate_payroll)
         self.calculate_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.calculate_btn.setStyleSheet(f"""
@@ -767,6 +1078,25 @@ class CalculatePayrollWindow(QDialog):
             }}
         """)
         button_layout.addWidget(self.calculate_btn)
+
+        self.manual_hours_btn = QPushButton("Ingresar horas manualmente")
+        self.manual_hours_btn.clicked.connect(self.open_manual_hours)
+        self.manual_hours_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.manual_hours_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {get_colors().AQUA};
+                color: {get_colors().BUTTON_TEXT};
+                border: 2px solid {get_colors().AQUA};
+                border-radius: 6px;
+                padding: 10px 20px;
+                font-size: 12pt;
+            }}
+            QPushButton:hover {{
+                background-color: {get_colors().BG_LIGHT};
+                color: {get_colors().AQUA};
+            }}
+        """)
+        button_layout.addWidget(self.manual_hours_btn)
         
         self.continue_btn = QPushButton("Continuar")
         self.continue_btn.clicked.connect(self.continue_operation)
@@ -838,7 +1168,7 @@ class CalculatePayrollWindow(QDialog):
         emp_label = QLabel("Archivo de Empleados:")
         emp_layout.addWidget(emp_label)
         
-        self.emp_file_edit = QLineEdit("employees_information.xlsx")
+        self.emp_file_edit = QLineEdit(os.path.join(DATA_DIR, "employees_information.xlsx"))
         emp_layout.addWidget(self.emp_file_edit)
         
         emp_browse_btn = QPushButton("Buscar")
@@ -852,7 +1182,7 @@ class CalculatePayrollWindow(QDialog):
         hours_label = QLabel("Archivo de Reporte de Asistencia:")
         hours_layout.addWidget(hours_label)
         
-        self.hours_file_edit = QLineEdit("Reporte de Asistencia.xlsx")
+        self.hours_file_edit = QLineEdit(os.path.join(DATA_DIR, "Reporte de Asistencia.xlsx"))
         hours_layout.addWidget(self.hours_file_edit)
         
         hours_browse_btn = QPushButton("Buscar")
@@ -920,8 +1250,37 @@ class CalculatePayrollWindow(QDialog):
         """Permite continuar después de calcular la nómina"""
         self.calculate_btn.setEnabled(True)
         self.continue_btn.setEnabled(False)
+        if hasattr(self, 'manual_hours_btn'):
+            self.manual_hours_btn.setEnabled(True)
         self.status_label.setText("")
         self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().AQUA};")
+
+    def open_manual_hours(self):
+        """Abre el diálogo para ingresar horas manualmente y calcula la nómina con esos datos."""
+        employees_file = self.emp_file_edit.text().strip()
+        if not employees_file:
+            QMessageBox.critical(self, "Error", "Debe especificar el archivo de empleados.")
+            return
+        if not os.path.exists(employees_file):
+            QMessageBox.critical(self, "Error", f"El archivo de empleados no existe: {employees_file}")
+            return
+        manual_df, quincena_str = ManualHoursDialog.get_manual_hours(self, employees_file)
+        if manual_df is None:
+            return
+        self.message_text.clear()
+        self.calculate_btn.setEnabled(False)
+        self.manual_hours_btn.setEnabled(False)
+        self.continue_btn.setEnabled(False)
+        self.status_label.setText("⏳ Calculando nómina con horas manuales... Por favor espere.")
+        self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().YELLOW};")
+        self.message_text.append("Calculando nómina con horas ingresadas manualmente...")
+        self.message_text.append(f"Archivo de empleados: {employees_file}")
+        self.message_text.append(f"Fecha de referencia quincena: {quincena_str}")
+        self.message_text.append("-" * 60)
+        self.calc_thread = CalculatePayrollManualThread(employees_file, manual_df, quincena_str)
+        self.calc_thread.finished.connect(self.update_result)
+        self.calc_thread.error.connect(self.show_error)
+        self.calc_thread.start()
     
     def calculate_payroll(self):
         """Calcula la nómina"""
@@ -988,6 +1347,8 @@ class CalculatePayrollWindow(QDialog):
             self.status_label.setText("✓ Nómina calculada exitosamente. Presione 'Continuar' para realizar otra operación.")
             self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().GREEN};")
             self.calculate_btn.setEnabled(True)
+            if hasattr(self, 'manual_hours_btn'):
+                self.manual_hours_btn.setEnabled(True)
             self.continue_btn.setEnabled(True)
             QMessageBox.information(
                 self,
@@ -1011,6 +1372,8 @@ class CalculatePayrollWindow(QDialog):
         self.status_label.setText(f"✗ Error: {error_msg[:50]}...")
         self.status_label.setStyleSheet(f"font-size: 11pt; font-weight: bold; color: {get_colors().RED};")
         self.calculate_btn.setEnabled(True)
+        if hasattr(self, 'manual_hours_btn'):
+            self.manual_hours_btn.setEnabled(True)
         self.continue_btn.setEnabled(True)
         QMessageBox.critical(
             self,

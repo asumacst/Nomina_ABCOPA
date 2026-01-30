@@ -19,11 +19,13 @@ El ejecutable se encuentra en la carpeta `dist` con el nombre:
    - Puedes copiarlo a cualquier ubicación (Escritorio, carpeta de documentos, etc.)
 
 2. **Preparar los archivos necesarios**
-   - Asegúrate de tener los siguientes archivos Excel en la misma carpeta que el ejecutable:
+   - Crea una carpeta llamada `datos` en la misma ubicación que el ejecutable.
+   - Dentro de `datos`, coloca los siguientes archivos:
      - `employees_information.xlsx` - Archivo con la información de los empleados
      - `Reporte de Asistencia.xlsx` - Archivo con los registros de asistencia (biométrico)
      - `prestamos.xlsx` - Control de préstamos (se crea automáticamente si no existe)
      - `seguridad_horario.xlsx` - Configuración de turnos de seguridad (se crea automáticamente si no existe)
+     - `logo.png` - Logo de la empresa (opcional, para la interfaz)
 
 3. **Ejecutar el programa**
    - Haz doble clic en `NominaABCOPA.exe`
@@ -52,9 +54,9 @@ Carpeta del Ejecutable/
 
 2. **Antivirus**: Algunos antivirus pueden marcar el ejecutable como sospechoso. Esto es un falso positivo común con programas compilados con PyInstaller. Puedes agregar una excepción en tu antivirus.
 
-3. **Archivos Excel**: Los archivos Excel deben estar en el mismo directorio que el ejecutable, o puedes usar la función "Buscar" en la interfaz para seleccionarlos desde otra ubicación.
+3. **Archivos Excel**: Los archivos Excel deben estar dentro de la carpeta `datos` junto al ejecutable, o puedes usar la función "Buscar" en la interfaz para seleccionarlos desde otra ubicación.
 
-4. **Archivos generados**: Los archivos de nómina generados se guardarán en la misma carpeta donde está el ejecutable.
+4. **Archivos generados**: Los archivos de nómina generados se guardarán dentro de la carpeta `datos`.
 
 ## 🔄 Regenerar el Ejecutable
 
