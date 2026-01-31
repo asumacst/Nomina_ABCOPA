@@ -1254,17 +1254,26 @@ def get_quincena_periods(daily_hours_df):
     if not pd.api.types.is_datetime64_any_dtype(daily_hours_df['fecha']):
         daily_hours_df['fecha'] = pd.to_datetime(daily_hours_df['fecha'])
     
-    # Calcular el inicio de la quincena (día 1 o 16 del mes)
+    # Calcular el inicio de la quincena (día 1 o 16 del mes) y fin = mismo día de pago (15 o último del mes)
     def get_quincena_start(date):
         day = date.day
         if day <= 15:
             return date.replace(day=1)
         else:
             return date.replace(day=16)
-    
+
+    def get_quincena_end(quincena_inicio):
+        """Fin de quincena = mismo día de pago: 15 o último día del mes."""
+        if quincena_inicio.day == 1:
+            return quincena_inicio.replace(day=15)
+        if quincena_inicio.month == 12:
+            return quincena_inicio.replace(day=31)
+        siguiente_mes = quincena_inicio.replace(month=quincena_inicio.month + 1, day=1)
+        return siguiente_mes - timedelta(days=1)
+
     daily_hours_df['quincena_inicio'] = daily_hours_df['fecha'].apply(get_quincena_start)
-    daily_hours_df['quincena_fin'] = daily_hours_df['quincena_inicio'] + timedelta(days=14)
-    
+    daily_hours_df['quincena_fin'] = daily_hours_df['quincena_inicio'].apply(get_quincena_end)
+
     return daily_hours_df
 
 
@@ -1394,8 +1403,6 @@ def calculate_payroll_quincenal(employees_file=None,
             quincena_inicio_target = quincena_fecha.replace(day=1)
         else:
             quincena_inicio_target = quincena_fecha.replace(day=16)
-        quincena_fin_target = quincena_inicio_target + timedelta(days=14)
-        print(f"Calculando nómina con HORAS MANUALES para quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
         if quincena_inicio_target.day == 1:
             fecha_pago = quincena_inicio_target.replace(day=15)
         else:
@@ -1404,6 +1411,8 @@ def calculate_payroll_quincenal(employees_file=None,
             else:
                 siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
                 fecha_pago = siguiente_mes - timedelta(days=1)
+        quincena_fin_target = fecha_pago
+        print(f"Calculando nómina con HORAS MANUALES para quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
         seguridad_cfg = leer_seguridad_config(fecha_pago, seguridad_horario_file)
         daily_hours_df = manual_hours_to_daily_df(manual_hours_df, quincena_inicio_target, quincena_fin_target)
         print(f"[OK] Horas manuales convertidas para {daily_hours_df['ID'].nunique()} empleados")
@@ -1450,9 +1459,6 @@ def calculate_payroll_quincenal(employees_file=None,
             quincena_inicio_target = quincena_fecha.replace(day=1)
         else:
             quincena_inicio_target = quincena_fecha.replace(day=16)
-        quincena_fin_target = quincena_inicio_target + timedelta(days=14)
-        print(f"Período de la quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
-
         if quincena_inicio_target.day == 1:
             fecha_pago = quincena_inicio_target.replace(day=15)
         else:
@@ -1461,6 +1467,9 @@ def calculate_payroll_quincenal(employees_file=None,
             else:
                 siguiente_mes = quincena_inicio_target.replace(month=quincena_inicio_target.month + 1, day=1)
                 fecha_pago = siguiente_mes - timedelta(days=1)
+        quincena_fin_target = fecha_pago
+        print(f"Período de la quincena: {quincena_inicio_target.strftime('%d/%m/%Y')} a {quincena_fin_target.strftime('%d/%m/%Y')}")
+
         seguridad_cfg = leer_seguridad_config(fecha_pago, seguridad_horario_file)
         print("\nCalculando horas trabajadas por dia...")
         daily_hours_df = calculate_hours_per_day_mixed(hours_df, security_ids=security_ids, security_config=seguridad_cfg)

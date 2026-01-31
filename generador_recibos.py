@@ -139,7 +139,7 @@ def generar_recibos(
     col_descuento_prestamo = _find_column(df, "Descuento Préstamo")
     col_total_descuentos = _find_column(df, "Total Descuentos")
     col_banco = _find_column(df, "Banco")
-    col_cuenta = _find_column(df, "Número de Cuenta")
+    col_cuenta = _find_column(df, "Número de Cuenta", "Numero de Cuenta", "Nº de Cuenta", "Cuenta")
     col_total_pago = _find_column(df, "Total Pago a Empleados")
 
     if not col_nombre or not col_id:
@@ -205,11 +205,12 @@ def generar_recibos(
         sh["A2"].value = _titulo_fila2
         sh["A2"].alignment = _centro
 
-        # Encabezado empleado: Proyecto siempre QUINTAS DEL ESTE (no el cargo)
+        # Encabezado empleado: Proyecto siempre QUINTAS DEL ESTE (no el cargo); número de cuenta en D4
+        cuenta_val = _safe_str(row.get(col_cuenta)) if col_cuenta else ""
         sh["A4"] = nombre
         sh["B4"] = id_emp
         sh["C4"] = "QUINTAS DEL ESTE"
-        sh["D4"] = ""
+        sh["D4"] = cuenta_val
         sh["F4"] = _safe_str(row.get(col_fecha_pago))
         sh["G4"] = total_pago
 
@@ -255,11 +256,11 @@ def generar_recibos(
         sh["C17"] = total_pago_detalle_horas  # Total a pagar sumando regulares + extras + domingo + feriado (al lado del total de horas)
         sh["C17"].font = Font(bold=True)  # Resaltar total en negrita
 
-        # Sección A19: datos de pago. A19/B19/C19 son etiquetas; debajo van los valores
+        # Sección A19: datos de pago. A19/B19/C19 son etiquetas; debajo van los valores (cuenta en A20)
         sh["A19"] = "DEPOSITADO A LA CUENTA"
         sh["B19"] = "POR LA SUMA DE"
         sh["C19"] = "BANCO"
-        sh["A20"] = _safe_str(row.get(col_cuenta)) if col_cuenta and col_cuenta in row.index else ""
+        sh["A20"] = cuenta_val
         sh["B20"] = total_pago
         sh["C20"] = _safe_str(row.get(col_banco))
 
@@ -268,11 +269,10 @@ def generar_recibos(
         celda_nombre.value = nombre
         celda_nombre.alignment = Alignment(horizontal="center", vertical="center")
 
-        # Ensanchar columnas de la zona de firma (RECIBIDO CONFORME y celdas inferiores) para que el empleado tenga espacio para firmar
+        # Ensanchar columnas: D zona de firma; E al ancho de la etiqueta "MONTO" (5 caracteres + margen)
         ancho_firma = 28
-        for col in ("D", "E"):
-            cd = sh.column_dimensions[col]
-            cd.width = max(cd.width or 0, ancho_firma)
+        sh.column_dimensions["D"].width = max(sh.column_dimensions["D"].width or 0, ancho_firma)
+        sh.column_dimensions["E"].width = max(len("MONTO") + 2, 7)
 
         # Duplicar todo el recibo más abajo en la misma hoja (copia para empleado y copia para empresa en una sola página al imprimir)
         _filas_recibo = 22
