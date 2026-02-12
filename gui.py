@@ -282,18 +282,18 @@ class NominaApp(QMainWindow):
         # Layout principal
         main_layout = QVBoxLayout(central_widget)
         main_layout.setAlignment(Qt.AlignCenter)
-        main_layout.setSpacing(20)
-        main_layout.setContentsMargins(40, 30, 40, 30)
+        main_layout.setSpacing(12)
+        main_layout.setContentsMargins(40, 18, 40, 30)
 
-        # Logo y título Quintas del Este
+        # Logo y título Quintas del Este (tamaños reducidos para dar más espacio a los botones)
         logo_container = QVBoxLayout()
         logo_container.setAlignment(Qt.AlignCenter)
-        logo_container.setSpacing(10)
+        logo_container.setSpacing(6)
 
         self.logo_label = QLabel()
         if os.path.exists(self._logo_path):
             pixmap = QPixmap(self._logo_path)
-            scaled_pixmap = pixmap.scaled(300, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            scaled_pixmap = pixmap.scaled(280, 120, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.logo_label.setPixmap(scaled_pixmap)
             self._logo_has_image = True
         else:
@@ -390,13 +390,13 @@ class NominaApp(QMainWindow):
         subtitle_color = C.FG if CURRENT_THEME == 'aqua' else C.YELLOW
         if not self._logo_has_image:
             self.logo_label.setStyleSheet(
-                f"font-size: 48pt; font-weight: bold; color: {title_color};"
+                f"font-size: 26pt; font-weight: bold; color: {title_color};"
             )
         self.title_label.setStyleSheet(
-            f"font-size: 36pt; font-weight: bold; color: {title_color}; margin: 10px;"
+            f"font-size: 22pt; font-weight: bold; color: {title_color}; margin: 4px;"
         )
         self.subtitle_label.setStyleSheet(
-            f"font-size: 28pt; font-weight: bold; color: {subtitle_color}; margin: 20px;"
+            f"font-size: 14pt; font-weight: bold; color: {subtitle_color}; margin: 6px;"
         )
         for btn, is_exit in self.main_buttons:
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -567,15 +567,15 @@ ARCHIVOS REQUERIDOS:
 • datos/seguridad_horario.xlsx - Turnos de seguridad (se crea si no existe)
 
 TIPOS DE EMPLEADOS:
-• Salario Fijo: Cobran lo mismo sin importar las horas
-• Empleado Fijo: Sueldo mínimo garantizado + bono por horas extra si trabajan más de lo requerido
+• Empleado de confianza: Cobran lo mismo sin importar las horas
+• Obrero fijo: Sueldo mínimo garantizado + bono por horas extra si trabajan más de lo requerido
 • Por Horas: Pago según horas con bonos por horas extra
 • Seguridad: Cobran por horas con turnos configurables; no aparecen en la nómina normal, solo en el archivo de seguridad
 
 IMPORTANTE:
 • Se requieren 2 registros por día por empleado (entrada y salida). Seguridad: puede cruzar medianoche y se valida por pares
-• Empleados fijos no pueden ser ambos tipos a la vez
-• Seguridad no puede ser "Salario Fijo" ni "Empleado Fijo"
+• No pueden ser "Empleado de confianza" y "Obrero fijo" a la vez
+• Seguridad no puede ser "Empleado de confianza" ni "Obrero fijo"
 """
 
     def __init__(self, parent=None):
@@ -962,7 +962,10 @@ class ManualHoursDialog(QDialog):
             QMessageBox.warning(self, "Archivo no encontrado", "No se encontró el archivo de empleados.")
             return
         try:
-            df = pd.read_excel(self.employees_file)
+            df = leer_empleados_normalizado(self.employees_file)
+            if df is None:
+                QMessageBox.critical(self, "Error", "No se pudo leer el archivo de empleados.")
+                return
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo leer el archivo de empleados: {e}")
             return
@@ -1681,10 +1684,10 @@ class AddEmployeeWindow(QDialog):
             ("Número de Cuenta:", "n_de_cuenta"),
             ("Banco:", "banco"),
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
-            ("Salario Fijo (S/N):", "salario_fijo"),
-            ("Empleado Fijo (S/N):", "empleado_fijo"),
+            ("Empleado de confianza (S/N):", "empleado_confianza"),
+            ("Obrero fijo (S/N):", "obrero_fijo"),
             ("Seguridad (S/N):", "seguridad"),
-            ("Salario Mínimo (mensual):", "salario_minimo"),
+            ("Sal. mín. obrero fijo (mensual):", "obrero_fijo_sal_min"),
             ("Empleado por contrato (S/N):", "empleado_por_contrato"),
             ("ISLR (Impuesto sobre la renta):", "islr")
         ]
@@ -1755,10 +1758,10 @@ class AddEmployeeWindow(QDialog):
         inputs.append(self.vars['n_de_cuenta'].text().strip())
         inputs.append(self.vars['banco'].text().strip())
         inputs.append(self.vars['tipo_de_cuenta'].text().strip())
-        salario_fijo_val = self.vars['salario_fijo'].text().strip().upper()
-        inputs.append('S' if salario_fijo_val == 'S' else 'N')
-        empleado_fijo_val = self.vars['empleado_fijo'].text().strip().upper()
-        inputs.append('S' if empleado_fijo_val == 'S' else 'N')
+        empleado_confianza_val = self.vars['empleado_confianza'].text().strip().upper()
+        inputs.append('S' if empleado_confianza_val == 'S' else 'N')
+        obrero_fijo_val = self.vars['obrero_fijo'].text().strip().upper()
+        inputs.append('S' if obrero_fijo_val == 'S' else 'N')
         seguridad_val = self.vars['seguridad'].text().strip().upper()
         inputs.append('S' if seguridad_val == 'S' else 'N')
         empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
@@ -1766,12 +1769,12 @@ class AddEmployeeWindow(QDialog):
         islr_val = self.vars['islr'].text().strip()
         inputs.append(islr_val if islr_val else '')
         
-        if salario_fijo_val == 'S' and empleado_fijo_val == 'S':
-            QMessageBox.critical(self, "Error", "Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+        if empleado_confianza_val == 'S' and obrero_fijo_val == 'S':
+            QMessageBox.critical(self, "Error", "Un empleado no puede ser 'Empleado de confianza' y 'Obrero fijo' al mismo tiempo")
             return
 
-        if seguridad_val == 'S' and (salario_fijo_val == 'S' or empleado_fijo_val == 'S'):
-            QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
+        if seguridad_val == 'S' and (empleado_confianza_val == 'S' or obrero_fijo_val == 'S'):
+            QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Empleado de confianza' ni 'Obrero fijo'. Debe cobrar por hora.")
             return
         
         if empleado_contrato_val == 'S':
@@ -1785,17 +1788,17 @@ class AddEmployeeWindow(QDialog):
                 QMessageBox.critical(self, "Error", "El ISLR debe ser un número válido")
                 return
 
-        if empleado_fijo_val == 'S':
-            salario_minimo_val = self.vars['salario_minimo'].text().strip()
-            if not salario_minimo_val:
-                QMessageBox.critical(self, "Error", "El salario mínimo es obligatorio para empleados fijos")
+        if obrero_fijo_val == 'S':
+            obrero_fijo_sal_min_val = self.vars['obrero_fijo_sal_min'].text().strip()
+            if not obrero_fijo_sal_min_val:
+                QMessageBox.critical(self, "Error", "El salario mínimo es obligatorio para obreros fijos")
                 return
             try:
-                float(salario_minimo_val)
+                float(obrero_fijo_sal_min_val)
             except ValueError:
                 QMessageBox.critical(self, "Error", "El salario mínimo debe ser un número válido")
                 return
-            inputs.append(salario_minimo_val)
+            inputs.append(obrero_fijo_sal_min_val)
         else:
             inputs.append('')
 
@@ -1900,10 +1903,10 @@ class ModifyEmployeeWindow(QDialog):
             ("Número de Cuenta:", "n_de_cuenta"),
             ("Banco:", "banco"),
             ("Tipo de Cuenta:", "tipo_de_cuenta"),
-            ("Salario Fijo (S/N):", "salario_fijo"),
-            ("Empleado Fijo (S/N):", "empleado_fijo"),
+            ("Empleado de confianza (S/N):", "empleado_confianza"),
+            ("Obrero fijo (S/N):", "obrero_fijo"),
             ("Seguridad (S/N):", "seguridad"),
-            ("Salario Mínimo (mensual):", "salario_minimo"),
+            ("Sal. mín. obrero fijo (mensual):", "obrero_fijo_sal_min"),
             ("Empleado por contrato (S/N):", "empleado_por_contrato"),
             ("ISLR (Impuesto sobre la renta):", "islr")
         ]
@@ -1996,16 +1999,18 @@ class ModifyEmployeeWindow(QDialog):
             self.vars['n_de_cuenta'].setText(str(emp.get('n_de_cuenta', '')))
             self.vars['banco'].setText(str(emp.get('banco', '')))
             self.vars['tipo_de_cuenta'].setText(str(emp.get('tipo_de_cuenta', '')))
-            salario_fijo_val = bool(emp.get('salario_fijo', False))
-            empleado_fijo_val = bool(emp.get('empleado_fijo', False))
+            empleado_confianza_val = bool(emp.get('empleado_confianza', emp.get('salario_fijo', False)))
+            obrero_fijo_val = bool(emp.get('obrero_fijo', emp.get('empleado_fijo', False)))
             seguridad_val = str(emp.get('seguridad', 'No')).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1']
-            salario_minimo_val = emp.get('salario_minimo', 0) if pd.notna(emp.get('salario_minimo')) else 0
+            obrero_fijo_sal_min_val = emp.get('obrero_fijo_sal_min', emp.get('salario_minimo', 0))
+            if pd.isna(obrero_fijo_sal_min_val):
+                obrero_fijo_sal_min_val = 0
             empleado_contrato_val = emp.get('Empleado por contrato', 'No')
             islr_val = emp.get('ISLR', 0) if pd.notna(emp.get('ISLR')) else 0
-            self.vars['salario_fijo'].setText('S' if salario_fijo_val else 'N')
-            self.vars['empleado_fijo'].setText('S' if empleado_fijo_val else 'N')
+            self.vars['empleado_confianza'].setText('S' if empleado_confianza_val else 'N')
+            self.vars['obrero_fijo'].setText('S' if obrero_fijo_val else 'N')
             self.vars['seguridad'].setText('S' if seguridad_val else 'N')
-            self.vars['salario_minimo'].setText(str(salario_minimo_val))
+            self.vars['obrero_fijo_sal_min'].setText(str(obrero_fijo_sal_min_val))
             self.vars['empleado_por_contrato'].setText('S' if str(empleado_contrato_val).strip().lower() in ['s', 'si', 'sí', 'yes', 'y', 'true', '1'] else 'N')
             self.vars['islr'].setText(str(islr_val))
             
@@ -2023,11 +2028,11 @@ class ModifyEmployeeWindow(QDialog):
             QMessageBox.critical(self, "Error", "Debe ingresar un ID")
             return
 
-        salario_fijo_val = self.vars['salario_fijo'].text().strip().upper()
-        empleado_fijo_val = self.vars['empleado_fijo'].text().strip().upper()
+        empleado_confianza_val = self.vars['empleado_confianza'].text().strip().upper()
+        obrero_fijo_val = self.vars['obrero_fijo'].text().strip().upper()
         seguridad_val = self.vars.get('seguridad').text().strip().upper() if 'seguridad' in self.vars else 'N'
-        if seguridad_val == 'S' and (salario_fijo_val == 'S' or empleado_fijo_val == 'S'):
-            QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
+        if seguridad_val == 'S' and (empleado_confianza_val == 'S' or obrero_fijo_val == 'S'):
+            QMessageBox.critical(self, "Error", "Un empleado de Seguridad no puede ser 'Empleado de confianza' ni 'Obrero fijo'. Debe cobrar por hora.")
             return
 
         empleado_contrato_val = self.vars['empleado_por_contrato'].text().strip().upper()
@@ -2056,12 +2061,12 @@ class ModifyEmployeeWindow(QDialog):
             self.vars['n_de_cuenta'].text().strip() or '',
             self.vars['banco'].text().strip() or '',
             self.vars['tipo_de_cuenta'].text().strip() or '',
-            self.vars['salario_fijo'].text().strip().upper() or '',
-            self.vars['empleado_fijo'].text().strip().upper() or '',
+            self.vars['empleado_confianza'].text().strip().upper() or '',
+            self.vars['obrero_fijo'].text().strip().upper() or '',
             self.vars['seguridad'].text().strip().upper() or '',
             self.vars['empleado_por_contrato'].text().strip().upper() or '',
             self.vars['islr'].text().strip() or '',
-            self.vars['salario_minimo'].text().strip() or ''
+            self.vars['obrero_fijo_sal_min'].text().strip() or ''
         ]
         
         input_index = [0]

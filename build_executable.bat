@@ -1,11 +1,19 @@
 @echo off
+cd /d "%~dp0"
+
 echo ========================================
 echo Generando ejecutable de Nomina ABCOPA
 echo ========================================
 echo.
 
-REM Activar entorno virtual
-call env\Scripts\activate.bat
+REM Usar siempre el Python del entorno virtual (evita que se use el de Windows Apps)
+set PYTHON_VENV=%~dp0env\Scripts\python.exe
+if not exist "%PYTHON_VENV%" (
+    echo Error: No se encontro el entorno virtual en env\
+    echo Crea el venv con: python -m venv env
+    pause
+    exit /b 1
+)
 
 REM Limpiar builds anteriores
 if exist build rmdir /s /q build
@@ -16,8 +24,8 @@ echo.
 echo Compilando ejecutable...
 echo.
 
-REM Generar ejecutable usando PyInstaller
-python -m PyInstaller nomina_abcopa.spec --clean
+REM Generar ejecutable usando PyInstaller (Python del venv)
+"%PYTHON_VENV%" -m PyInstaller nomina_abcopa.spec --clean
 
 echo.
 echo ========================================

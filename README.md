@@ -103,7 +103,7 @@ La aplicación requiere los siguientes archivos:
 2. **employees_information.xlsx**: Archivo con la información de los empleados
 
    - Columnas usadas por el sistema: `ID`, `nombre`, `cargo`, `salario`, `n_de_cuenta`, `banco`, `tipo_de_cuenta`,
-     `salario_fijo`, `empleado_fijo`, `salario_minimo`, `Empleado por contrato`, `ISLR`, `seguridad`
+     `empleado_confianza`, `obrero_fijo`, `obrero_fijo_sal_min`, `Empleado por contrato`, `ISLR`, `seguridad`
 3. **Reporte de Asistencia.xlsx**: Archivo con los registros de asistencia
 
    - Columnas requeridas: ID, nombre, fecha, hora

@@ -1370,10 +1370,12 @@ def calculate_payroll_quincenal(employees_file=None,
     print("SISTEMA DE NOMINA QUINCENAL")
     print("="*80)
     
-    # Leer archivo de empleados
+    # Leer archivo de empleados (normalizado: una sola columna "Empleado por contrato")
     print(f"\nLeyendo informacion de empleados desde: {employees_file}")
     try:
-        employees_df = pd.read_excel(employees_file)
+        employees_df = leer_empleados_normalizado(employees_file)
+        if employees_df is None:
+            return None
         print(f"[OK] Encontrados {len(employees_df)} empleados")
     except Exception as e:
         print(f"[ERROR] Error al leer {employees_file}: {e}")
@@ -1505,7 +1507,7 @@ def calculate_payroll_quincenal(employees_file=None,
     for _, emp in employees_df.iterrows():
         contrato_val = get_column_value(
             emp,
-            ['Empleado por contrato', 'empleado_por_contrato', 'empleado por contrato'],
+            ['Empleado por contrato', 'empleado_por_contrato', 'empleado por contrato', 'Por contrato'],
             default=False
         )
         seguridad_val = get_column_value(
@@ -1518,13 +1520,16 @@ def calculate_payroll_quincenal(employees_file=None,
             islr_val = float(islr_val) if pd.notna(islr_val) else 0.0
         except (TypeError, ValueError):
             islr_val = 0.0
-        # Usar ID como clave principal, pero también nombre como alternativa
+        # Usar ID como clave principal; leer campos con nombres nuevos o antiguos
+        confianza_val = emp.get('empleado_confianza', emp.get('salario_fijo', False))
+        obrero_val = emp.get('obrero_fijo', emp.get('empleado_fijo', False))
+        sal_min_val = emp.get('obrero_fijo_sal_min', emp.get('salario_minimo', 0))
         employees_dict[str(emp['ID'])] = {
             'nombre': emp['nombre'],
-            'salario_fijo': bool(emp.get('salario_fijo', False)),
-            'empleado_fijo': bool(emp.get('empleado_fijo', False)),
+            'empleado_confianza': bool(confianza_val) if not pd.isna(confianza_val) else False,
+            'obrero_fijo': bool(obrero_val) if not pd.isna(obrero_val) else False,
             'seguridad': parse_bool(seguridad_val),
-            'salario_minimo': float(emp.get('salario_minimo', 0)) if pd.notna(emp.get('salario_minimo')) else 0.0,
+            'obrero_fijo_sal_min': float(sal_min_val) if pd.notna(sal_min_val) else 0.0,
             'salario': float(emp['salario']) if pd.notna(emp['salario']) else 0.0,
             'cargo': emp.get('cargo', ''),
             'n_de_cuenta': emp.get('n_de_cuenta', ''),
@@ -1570,15 +1575,15 @@ def calculate_payroll_quincenal(employees_file=None,
         
         # Calcular pago según el tipo de empleado
         force_hourly = bool(emp_info.get('seguridad', False))
-        if emp_info['salario_fijo'] and not force_hourly:
-            # Empleado con salario fijo: recibe el mismo salario sin importar horas (no recibe pago extra)
+        if emp_info['empleado_confianza'] and not force_hourly:
+            # Empleado de confianza: recibe el mismo salario sin importar horas (no recibe pago extra)
             pago_quincenal = emp_info['salario'] / 2  # Salario mensual dividido en 2 quincenas
-            pago_extra = 0.0  # Los empleados con salario fijo no reciben pago extra
-            pago_feriado_domingo = 0.0  # Los empleados con salario fijo no reciben pago extra por feriados/domingos
-            tipo_pago = "Salario Fijo"
-        elif emp_info['empleado_fijo'] and not force_hourly:
-            # Empleado fijo con sueldo mínimo: cobra salario mínimo garantizado + bono por horas extra
-            salario_minimo = emp_info['salario_minimo']
+            pago_extra = 0.0  # Los empleados de confianza no reciben pago extra
+            pago_feriado_domingo = 0.0  # Los empleados de confianza no reciben pago extra por feriados/domingos
+            tipo_pago = "Empleado confianza"
+        elif emp_info['obrero_fijo'] and not force_hourly:
+            # Obrero fijo con sueldo mínimo: cobra salario mínimo garantizado + bono por horas extra
+            salario_minimo = emp_info['obrero_fijo_sal_min']
             salario_por_hora = emp_info['salario']
             
             # Calcular horas requeridas para el salario mínimo (mensual)
@@ -1631,7 +1636,7 @@ def calculate_payroll_quincenal(employees_file=None,
             
             # Pago total: salario mínimo + bono por horas extra + pago extra (25%) + pago feriado/domingo (50%)
             pago_quincenal = pago_base + bono_horas_extra + pago_extra + pago_feriado_domingo
-            tipo_pago = "Empleado Fijo"
+            tipo_pago = "Obrero fijo"
         else:
             # Empleado no fijo: salario por horas trabajadas
             # Asumimos que el salario es por hora
@@ -1739,8 +1744,8 @@ def calculate_payroll_quincenal(employees_file=None,
             'Nombre': emp_info['nombre'],
             'Cargo': emp_info['cargo'],
             'Tipo': tipo_pago,
-            'Salario Fijo': 'Sí' if emp_info['salario_fijo'] else 'No',
-            'Empleado Fijo': 'Sí' if emp_info['empleado_fijo'] else 'No',
+            'Empleado confianza': 'Sí' if emp_info['empleado_confianza'] else 'No',
+            'Obrero fijo': 'Sí' if emp_info['obrero_fijo'] else 'No',
             'Empleado por contrato': 'Sí' if emp_info['empleado_por_contrato'] else 'No',
             'Salario Base': emp_info['salario'],
             'Quincena Inicio': quincena_inicio.strftime('%d/%m/%Y'),
@@ -1774,7 +1779,7 @@ def calculate_payroll_quincenal(employees_file=None,
         return None
 
     # Nómina normal (sin empleados de seguridad)
-    columnas_principal = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Salario Fijo', 'Empleado Fijo', 'Empleado por contrato',
+    columnas_principal = ['ID', 'Nombre', 'Cargo', 'Tipo', 'Empleado confianza', 'Obrero fijo', 'Empleado por contrato',
                 'Salario Base', 'Quincena Inicio', 'Quincena Fin', 'Fecha de Pago',
                 'Total Horas Trabajadas', 'Horas Extra (después 3 PM)',
                 'Pago Extra (25% adicional)', 'Bono Horas Extra', 'Horas Feriado/Domingo',
@@ -1865,11 +1870,13 @@ def calculate_payroll_quincenal(employees_file=None,
 
 def leer_empleados_normalizado(employees_file=None):
     """
-    Lee el archivo de empleados y normaliza los IDs (convierte floats enteros a int).
-    Deja una sola columna de impuesto sobre la renta (ISLR); elimina ISL si existe.
+    Lee el archivo de empleados y normaliza:
+    - Una sola columna de impuesto (ISLR); elimina ISL si existe.
+    - Una sola columna de contrato: "Empleado por contrato"; elimina "Por contrato" si existe.
+    - IDs: convierte floats enteros a int.
     
     Returns:
-        DataFrame con IDs normalizados o None si hay error
+        DataFrame con IDs y columnas normalizados o None si hay error
     """
     if employees_file is None:
         employees_file = DEFAULT_EMPLOYEES_FILE
@@ -1883,6 +1890,20 @@ def leer_empleados_normalizado(employees_file=None):
                 mask = pd.isna(employees_df['ISLR']) & pd.notna(employees_df['ISL'])
                 employees_df.loc[mask, 'ISLR'] = employees_df.loc[mask, 'ISL']
                 employees_df = employees_df.drop(columns=['ISL'])
+        # Unificar "Por contrato" en "Empleado por contrato" (evitar columna redundante)
+        if 'Por contrato' in employees_df.columns:
+            if 'Empleado por contrato' not in employees_df.columns:
+                employees_df = employees_df.rename(columns={'Por contrato': 'Empleado por contrato'})
+            else:
+                employees_df['Empleado por contrato'] = employees_df['Empleado por contrato'].fillna(employees_df['Por contrato'])
+                employees_df = employees_df.drop(columns=['Por contrato'])
+        # Normalizar nombres de campos de tipo de empleado (nuevos nombres canónicos)
+        if 'salario_fijo' in employees_df.columns and 'empleado_confianza' not in employees_df.columns:
+            employees_df = employees_df.rename(columns={'salario_fijo': 'empleado_confianza'})
+        if 'empleado_fijo' in employees_df.columns and 'obrero_fijo' not in employees_df.columns:
+            employees_df = employees_df.rename(columns={'empleado_fijo': 'obrero_fijo'})
+        if 'salario_minimo' in employees_df.columns and 'obrero_fijo_sal_min' not in employees_df.columns:
+            employees_df = employees_df.rename(columns={'salario_minimo': 'obrero_fijo_sal_min'})
         # Normalizar IDs: convertir floats enteros a int, pero preservar strings
         if 'ID' in employees_df.columns:
             def normalizar_id_lectura(id_val):
@@ -1993,8 +2014,8 @@ def agregar_empleado(employees_file=None):
     n_de_cuenta = input('Numero de cuenta: ').strip()
     banco = input('Banco: ').strip()
     tipo_de_cuenta = input('Tipo de cuenta: ').strip()
-    salario_fijo = input('Salario Fijo (S/N) - Cobra lo mismo sin importar horas: ').strip().upper()
-    empleado_fijo = input('Empleado Fijo (S/N) - Tiene sueldo mínimo + bono por horas extra: ').strip().upper()
+    empleado_confianza_str = input('Empleado de confianza (S/N) - Cobra lo mismo sin importar horas: ').strip().upper()
+    obrero_fijo_str = input('Obrero fijo (S/N) - Tiene sueldo mínimo + bono por horas extra: ').strip().upper()
     seguridad_str = input('Seguridad (S/N) - Turno fijo (ej: 12 horas): ').strip().upper()
     empleado_contrato = input('Empleado por contrato (S/N): ').strip().upper()
     islr_str = input('ISLR (Impuesto sobre la renta): ').strip()
@@ -2006,11 +2027,9 @@ def agregar_empleado(employees_file=None):
         print("[ERROR] El salario debe ser un número válido")
         return None
     
-    # Convertir salario_fijo a booleano
-    salario_fijo_bool = (salario_fijo == 'S')
-    
-    # Convertir empleado_fijo a booleano
-    empleado_fijo_bool = (empleado_fijo == 'S')
+    # Convertir empleado_confianza y obrero_fijo a booleanos
+    empleado_confianza_bool = (empleado_confianza_str == 'S')
+    obrero_fijo_bool = (obrero_fijo_str == 'S')
 
     # Convertir seguridad a booleano
     seguridad_bool = (seguridad_str == 'S')
@@ -2029,22 +2048,22 @@ def agregar_empleado(employees_file=None):
         islr = 0.0
     
     # Validar que no sean ambos tipos a la vez
-    if salario_fijo_bool and empleado_fijo_bool:
-        print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+    if empleado_confianza_bool and obrero_fijo_bool:
+        print("[ERROR] Un empleado no puede ser 'Empleado de confianza' y 'Obrero fijo' al mismo tiempo")
         return None
 
-    # Validar seguridad: debe comportarse como empleado por horas (no salario fijo ni empleado fijo)
-    if seguridad_bool and (salario_fijo_bool or empleado_fijo_bool):
-        print("[ERROR] Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
+    # Validar seguridad: debe comportarse como empleado por horas (no confianza ni obrero fijo)
+    if seguridad_bool and (empleado_confianza_bool or obrero_fijo_bool):
+        print("[ERROR] Un empleado de Seguridad no puede ser 'Empleado de confianza' ni 'Obrero fijo'. Debe cobrar por hora.")
         return None
     
-    # Si es empleado_fijo, solicitar salario_minimo
-    salario_minimo = 0.0
-    if empleado_fijo_bool:
-        salario_minimo_str = input('Salario Mínimo (mensual): ').strip()
+    # Si es obrero_fijo, solicitar obrero_fijo_sal_min
+    obrero_fijo_sal_min = 0.0
+    if obrero_fijo_bool:
+        sal_min_str = input('Sal. mín. obrero fijo (mensual): ').strip()
         try:
-            salario_minimo = float(salario_minimo_str)
-            if salario_minimo <= 0:
+            obrero_fijo_sal_min = float(sal_min_str)
+            if obrero_fijo_sal_min <= 0:
                 print("[ERROR] El salario mínimo debe ser mayor a 0")
                 return None
         except ValueError:
@@ -2069,10 +2088,10 @@ def agregar_empleado(employees_file=None):
         'n_de_cuenta': [n_de_cuenta],
         'banco': [banco],
         'tipo_de_cuenta': [tipo_de_cuenta],
-        'salario_fijo': [1 if salario_fijo_bool else 0],
-        'empleado_fijo': [1 if empleado_fijo_bool else 0],
+        'empleado_confianza': [1 if empleado_confianza_bool else 0],
+        'obrero_fijo': [1 if obrero_fijo_bool else 0],
         'seguridad': ['Sí' if seguridad_bool else 'No'],
-        'salario_minimo': [salario_minimo if empleado_fijo_bool else 0],
+        'obrero_fijo_sal_min': [obrero_fijo_sal_min if obrero_fijo_bool else 0],
         'Empleado por contrato': ['Sí' if empleado_contrato_bool else 'No'],
         'ISLR': [islr]
     })
@@ -2230,19 +2249,23 @@ def modificar_empleado(employees_file=None):
     print(f"  Número de cuenta: {empleado_actual.get('n_de_cuenta', 'N/A')}")
     print(f"  Banco: {empleado_actual.get('banco', 'N/A')}")
     print(f"  Tipo de cuenta: {empleado_actual.get('tipo_de_cuenta', 'N/A')}")
-    salario_fijo_actual = bool(empleado_actual.get('salario_fijo', False))
-    empleado_fijo_actual = bool(empleado_actual.get('empleado_fijo', False))
+    confianza_actual = bool(empleado_actual.get('empleado_confianza', empleado_actual.get('salario_fijo', False)))
+    obrero_fijo_actual = bool(empleado_actual.get('obrero_fijo', empleado_actual.get('empleado_fijo', False)))
     seguridad_actual = str(empleado_actual.get('seguridad', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
-    salario_minimo_actual = empleado_actual.get('salario_minimo', 0) if pd.notna(empleado_actual.get('salario_minimo')) else 0
+    obrero_sal_min_actual = empleado_actual.get('obrero_fijo_sal_min', empleado_actual.get('salario_minimo', 0))
+    if pd.isna(obrero_sal_min_actual):
+        obrero_sal_min_actual = 0
+    else:
+        obrero_sal_min_actual = float(obrero_sal_min_actual)
     empleado_contrato_actual = str(empleado_actual.get('Empleado por contrato', 'No')).strip().lower() in ['sí', 'si', 's', 'yes', 'y', 'true', '1']
     islr_actual = empleado_actual.get('ISLR', 0) if pd.notna(empleado_actual.get('ISLR')) else 0
-    print(f"  Salario Fijo: {'Sí' if salario_fijo_actual else 'No'}")
-    print(f"  Empleado Fijo: {'Sí' if empleado_fijo_actual else 'No'}")
+    print(f"  Empleado de confianza: {'Sí' if confianza_actual else 'No'}")
+    print(f"  Obrero fijo: {'Sí' if obrero_fijo_actual else 'No'}")
     print(f"  Seguridad: {'Sí' if seguridad_actual else 'No'}")
     print(f"  Empleado por contrato: {'Sí' if empleado_contrato_actual else 'No'}")
     print(f"  ISLR: {islr_actual}")
-    if empleado_fijo_actual:
-        print(f"  Salario Mínimo: {salario_minimo_actual}")
+    if obrero_fijo_actual:
+        print(f"  Sal. mín. obrero fijo: {obrero_sal_min_actual}")
     
     print('\nIngrese los nuevos datos (presione Enter para mantener el valor actual):')
     
@@ -2277,17 +2300,17 @@ def modificar_empleado(employees_file=None):
     if not tipo_de_cuenta:
         tipo_de_cuenta = empleado_actual.get('tipo_de_cuenta', '')
     
-    salario_fijo_str = input(f'Salario Fijo (S/N) [{"S" if salario_fijo_actual else "N"}]: ').strip().upper()
-    if not salario_fijo_str:
-        salario_fijo_bool = salario_fijo_actual
+    confianza_str = input(f'Empleado de confianza (S/N) [{"S" if confianza_actual else "N"}]: ').strip().upper()
+    if not confianza_str:
+        empleado_confianza_bool = confianza_actual
     else:
-        salario_fijo_bool = (salario_fijo_str == 'S')
+        empleado_confianza_bool = (confianza_str == 'S')
     
-    empleado_fijo_str = input(f'Empleado Fijo (S/N) [{"S" if empleado_fijo_actual else "N"}]: ').strip().upper()
-    if not empleado_fijo_str:
-        empleado_fijo_bool = empleado_fijo_actual
+    obrero_fijo_str = input(f'Obrero fijo (S/N) [{"S" if obrero_fijo_actual else "N"}]: ').strip().upper()
+    if not obrero_fijo_str:
+        obrero_fijo_bool = obrero_fijo_actual
     else:
-        empleado_fijo_bool = (empleado_fijo_str == 'S')
+        obrero_fijo_bool = (obrero_fijo_str == 'S')
     
     seguridad_str = input(f'Seguridad (S/N) [{"S" if seguridad_actual else "N"}]: ').strip().upper()
     if not seguridad_str:
@@ -2312,29 +2335,29 @@ def modificar_empleado(employees_file=None):
         islr = islr_actual
 
     # Validar que no sean ambos tipos a la vez
-    if salario_fijo_bool and empleado_fijo_bool:
-        print("[ERROR] Un empleado no puede ser 'Salario Fijo' y 'Empleado Fijo' al mismo tiempo")
+    if empleado_confianza_bool and obrero_fijo_bool:
+        print("[ERROR] Un empleado no puede ser 'Empleado de confianza' y 'Obrero fijo' al mismo tiempo")
         return None
 
-    if seguridad_bool and (salario_fijo_bool or empleado_fijo_bool):
-        print("[ERROR] Un empleado de Seguridad no puede ser 'Salario Fijo' ni 'Empleado Fijo'. Debe cobrar por hora.")
+    if seguridad_bool and (empleado_confianza_bool or obrero_fijo_bool):
+        print("[ERROR] Un empleado de Seguridad no puede ser 'Empleado de confianza' ni 'Obrero fijo'. Debe cobrar por hora.")
         return None
     
-    # Si es empleado_fijo, solicitar salario_minimo
-    salario_minimo = salario_minimo_actual
-    if empleado_fijo_bool:
-        salario_minimo_str = input(f'Salario Mínimo (mensual) [{salario_minimo_actual}]: ').strip()
-        if salario_minimo_str:
+    # Si es obrero_fijo, solicitar obrero_fijo_sal_min
+    obrero_fijo_sal_min = obrero_sal_min_actual
+    if obrero_fijo_bool:
+        sal_min_str = input(f'Sal. mín. obrero fijo (mensual) [{obrero_sal_min_actual}]: ').strip()
+        if sal_min_str:
             try:
-                salario_minimo = float(salario_minimo_str)
-                if salario_minimo <= 0:
+                obrero_fijo_sal_min = float(sal_min_str)
+                if obrero_fijo_sal_min <= 0:
                     print("[ERROR] El salario mínimo debe ser mayor a 0. Se mantendrá el valor actual.")
-                    salario_minimo = salario_minimo_actual
+                    obrero_fijo_sal_min = obrero_sal_min_actual
             except ValueError:
                 print("[ERROR] El salario mínimo debe ser un número válido. Se mantendrá el valor actual.")
-                salario_minimo = salario_minimo_actual
-    elif not empleado_fijo_bool:
-        salario_minimo = 0.0
+                obrero_fijo_sal_min = obrero_sal_min_actual
+    elif not obrero_fijo_bool:
+        obrero_fijo_sal_min = 0.0
     
     # Modificar el DataFrame usando .loc
     employees_df.loc[indice, 'nombre'] = nombre
@@ -2343,10 +2366,10 @@ def modificar_empleado(employees_file=None):
     employees_df.loc[indice, 'n_de_cuenta'] = n_de_cuenta
     employees_df.loc[indice, 'banco'] = banco
     employees_df.loc[indice, 'tipo_de_cuenta'] = tipo_de_cuenta
-    employees_df.loc[indice, 'salario_fijo'] = 1 if salario_fijo_bool else 0
-    employees_df.loc[indice, 'empleado_fijo'] = 1 if empleado_fijo_bool else 0
+    employees_df.loc[indice, 'empleado_confianza'] = 1 if empleado_confianza_bool else 0
+    employees_df.loc[indice, 'obrero_fijo'] = 1 if obrero_fijo_bool else 0
     employees_df.loc[indice, 'seguridad'] = 'Sí' if seguridad_bool else 'No'
-    employees_df.loc[indice, 'salario_minimo'] = salario_minimo if empleado_fijo_bool else 0
+    employees_df.loc[indice, 'obrero_fijo_sal_min'] = obrero_fijo_sal_min if obrero_fijo_bool else 0
     employees_df.loc[indice, 'Empleado por contrato'] = 'Sí' if empleado_contrato_bool else 'No'
     employees_df.loc[indice, 'ISLR'] = islr if empleado_contrato_bool else 0
     

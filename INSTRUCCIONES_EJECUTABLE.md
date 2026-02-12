@@ -86,9 +86,9 @@ Debe contener las siguientes columnas:
 - n_de_cuenta
 - banco
 - tipo_de_cuenta
-- salario_fijo (0/1)
-- empleado_fijo (0/1)
-- salario_minimo
+- empleado_confianza (0/1)
+- obrero_fijo (0/1)
+- obrero_fijo_sal_min
 - Empleado por contrato (Sí/No)
 - ISLR
 - seguridad (Sí/No)
